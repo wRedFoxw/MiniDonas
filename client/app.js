@@ -16,6 +16,13 @@ this.bannerInterval = null;
 this.isNotificationsOpen = false;
 this.isOptionsOpen = false;
 this.isFloatingMenuOpen = false;
+this.isAnimatingFloatingMenu = false;
+this.isAnimatingOptionsMenu = false;
+this.isAnimatingNotificationsPanel = false;
+this.bannerStartX = 0;
+this.bannerCurrentX = 0;
+this.isBannerDragging = false;
+this.bannerTransitionEnabled = true;
 this.setupAppLifecycle();
 this.init();
 }
@@ -54,22 +61,16 @@ this.showAlert('Error', 'No se pudo cargar la aplicación. Intenta recargar la p
 }
 
 applySystemTheme() {
-// Eliminar clases de tema previas
 document.body.classList.remove('light-mode', 'dark-mode');
 
-// Aplicar tema del sistema
 if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-// Tema oscuro del sistema
 document.body.classList.add('dark-mode');
 } else {
-// Tema claro del sistema (por defecto)
 document.body.classList.add('light-mode');
 }
 
-// Escuchar cambios en la preferencia del sistema
 if (window.matchMedia) {
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
-// Solo cambiar si el usuario no ha seleccionado un tema manualmente
 const userTheme = localStorage.getItem('userTheme');
 if (!userTheme) {
 if (e.matches) {
@@ -283,7 +284,7 @@ this.markAsRead(notification.id);
 
 playNotificationSound() {
 try {
-const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF5fdJivrJBhNjVgodDbq2EcBj+Nq7qziFcqABVqo8bJpXZJAAAACER8jJund0EcAAAACDZidI+winAsAAAABi1QX4Wfl4E7AAAABRIjN2aHl5bGXgAAAAUaK0hqjJ2Z2EIAAAAGFBs2V3iXmNBNAAAABhUZMVB0kZbQTgAAAAYUFi9LbIeV0E4AAAAGEhUsRmiEktBOAAAABhIUK0NjgpHQTgAAAAYREilAXH6O0E4AAAAGDxAmPFh7jNBOAAAABg4OJDhUd4rQTgAAAAYNDCM1UnWI0E4AAAAGCwohMlBzhtBOAAAABgoJHjBOcYTQTgAAAAYJCB0uTG+B0E4AAAAGCAccLEptf9BOAAAABgcGGipIan3QTgAAAAYGBRgpSGh80E4AAAAGBQQWJ0Zme9BOAAAABgQDFCVFZHrQTgAAAAYDARIlRGN50E4AAAAGAgAQJENieNBOAAAABgL/DiNCYXfQTgAAAAYC/g0iQWB20E4AAAAGAv0MIkBfddBOAAAABgL8CyE/XnTQTgAAAAYC+wogPl1z0E4AAAAGAvkJHz1cctBOAAAABgL4CB48W3HQTgAAAAYC9wcdO1pw0E4AAAAGAvYGHjpZb9BOAAAABgL1BR05WG7QTgAAAAYC9AQcOFdt0E4AAAAGAvMDGzdWbNBOAAAABgLyAhk2VWvQTgAAAAYC8QEYNVRq0E4AAAAGAvAAFjRTadBOAAAABgLv/xUzUmnQTgAAAAYC7v4UMlFo0E4AAAAGAu39EzFQZ9BOAAAABgLs/BMwT2bQTgAAAAYC6/sSL05l0E4AAAAGAur6ES5NZNBOAAAABgLp+RAuTGPQTgAAAAYC6PgPLUtj0E4AAAAGAuf3Di1KYtBOAAAABgLm9g0sSmHQTgAAAAYC5fUMLElg0E4AAAAGA+T0CyxIX9BOAAAABgPj8worSF7QTgAAAAYC4vMJK0dd0E4AAAAGAuHxCCtGXNBOAAAABgLg8AcrRVvQTgAAAAYC3/AFK0Ra0E4AAAAGAt7vBitDWdBOAAAABgLd7gUrQljQTgAAAAYC3O0EK0FX0E4AAAAGAtvsAytAVtBOAAAABgLa6wIrP1XQTgAAAAYC2eoBKz5U0E4AAAAGAtjpACs9U9BOAAAABgLX6P8qPFLQTgAAAAYC1uf+KjtR0E4AAAAGAtXm/So6UNBOAAAABgLU5fwqOVDQTgAAAAYC0+X7KjhP0E4AAAAGAtLl+io3TtBOAAAABgLR5PkqNk3QTgAAAAYC0OT4KjVM0E4AAAAGAs/k9yo0S9BOAAAABgLO4/YqM0rQTgAAAAY');
+const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF5fdJivrJBhNjVgodDbq2EcBj+Nq7qziFcqABVqo8bJpXZJAAAACER8jJund0EcAAAACDZidI+winAsAAAABi1QX4Wfl4E7AAAABRIjN2aHl5bGXgAAAAUaK0hqjJ2Z2EIAAAAGFBs2V3iXmNBNAAAABhUZMVB0kZbQTgAAAAYUFi9LbIeV0E4AAAAGEhUsRmiEktBOAAAABhIUK0NjgpHQTgAAAAYREilAXH6O0E4AAAAGDxAmPFh7jNBOAAAABg4OJDhUd4rQTgAAAAYNDCM1UnWI0E4AAAAGCwohMlBzhtBOAAAABgoJHjBOcYTQTgAAAAYJCB0uTG+B0E4AAAAGCAccLEptf9BOAAAABgcGGipIan3QTgAAAAYGBRgpSGh80E4AAAAGBQQWJ0Zme9BOAAAABgQDFCVFZHrQTgAAAAYDARIlRGN50E4AAAAGAgAQJENieNBOAAAABgL/DiNCYXfQTgAAAAYC/g0iQWB20E4AAAAGAv0MIkBfddBOAAAABgL8CyE/XnTQTgAAAAYC+wogPl1z0E4AAAAGAvkJHz1cctBOAAAABgL4CB48W3HQTgAAAAYC9wcdO1pw0E4AAAAGAvYGHjpZb9BOAAAABgL1BR05WG7QTgAAAAYC9AQcOFdt0E4AAAAGAvMDGzdWbNBOAAAABgLyAhk2VWvQTgAAAAYC8QEYNVRq0E4AAAAGAvAAFjRTadBOAAAABgLv/xUzUmnQTgAAAAYC7v4UMlFo0E4AAAAGAu39EzFQZ9BOAAAABgLs/BMwT2bQTgAAAAYC6/sSL05l0E4AAAAGAur6ES5NZNBOAAAABgLp+RAuTGPQTgAAAAYC6PgPLUtj0E4AAAAGAuf3Di1KYtBOAAAABgLm9g0sSmHQTgAAAAYC5fUMLElg0E4AAAAGA+T0CyxIX9BOAAAABgPj8worSF7QTgAAAAYC4vMJK0dd0E4AAAAGAuHxCCtGXNBOAAAABgLg8AcrRVvQTgAAAAYC3/AFK0Ra0E4AAAAGAt7vBitDWdBOAAAABgLd7gUrQljQTgAAAAYC3O0EK0FX0E4AAAAGAtvsAytAVtBOAAAABgLa6wIrP1XQTgAAAAYC2eoBKz5U0E4AAAABgLX6P8qPFLQTgAAAAYC1uf+KjtR0E4AAAAGAtXm/So6UNBOAAAABgLU5fwqOVDQTgAAAAYC0+X7KjhP0E4AAAAGAtLl+io3TtBOAAAABgLR5PkqNk3QTgAAAAYC0OT4KjVM0E4AAAAGAs/k9yo0S9BOAAAABgLO4/YqM0rQTgAAAAY');
 audio.volume = 0.3;
 audio.play().catch(e => console.log('No se pudo reproducir sonido:', e));
 } catch (error) {
@@ -504,11 +505,13 @@ this.banners.forEach((banner, index) => {
 const bannerElement = document.createElement('div');
 bannerElement.className = `banner-slide ${index === 0 ? 'active' : ''}`;
 bannerElement.innerHTML = `
+<div class="banner-image-container">
 <img src="${banner.image_data}" alt="${banner.title || 'Banner'}" 
 onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'">
 <div class="banner-placeholder" style="display: ${banner.image_data ? 'none' : 'flex'}">
 <i class="fas fa-image"></i>
 <p>Imagen no disponible</p>
+</div>
 </div>
 ${banner.title || banner.subtitle ? `
 <div class="banner-content">
@@ -553,32 +556,33 @@ bannerContainer.appendChild(bannersWrapper);
 }
 
 setupBannerTouch(bannersWrapper) {
-let startX = 0;
-let currentX = 0;
-let isDragging = false;
-
 const onTouchStart = (e) => {
-startX = e.touches[0].clientX;
-currentX = startX;
-isDragging = true;
+this.bannerStartX = e.touches[0].clientX;
+this.bannerCurrentX = this.bannerStartX;
+this.isBannerDragging = true;
+this.bannerTransitionEnabled = false;
 bannersWrapper.style.transition = 'none';
+this.pauseBannerRotation();
 };
 
 const onTouchMove = (e) => {
-if (!isDragging) return;
-currentX = e.touches[0].clientX;
-const diff = currentX - startX;
-bannersWrapper.style.transform = `translateX(calc(-${this.currentBannerIndex * 100}% + ${diff}px)`;
+if (!this.isBannerDragging) return;
+this.bannerCurrentX = e.touches[0].clientX;
+const diff = this.bannerCurrentX - this.bannerStartX;
+const currentPosition = -this.currentBannerIndex * 100;
+const newPosition = currentPosition + (diff / bannersWrapper.offsetWidth) * 100;
+
+bannersWrapper.style.transform = `translateX(${newPosition}%)`;
 };
 
 const onTouchEnd = (e) => {
-if (!isDragging) return;
-isDragging = false;
-
-const diff = currentX - startX;
-const threshold = 50;
-
+if (!this.isBannerDragging) return;
+this.isBannerDragging = false;
+this.bannerTransitionEnabled = true;
 bannersWrapper.style.transition = 'transform 0.3s ease';
+
+const diff = this.bannerCurrentX - this.bannerStartX;
+const threshold = bannersWrapper.offsetWidth * 0.1;
 
 if (Math.abs(diff) > threshold) {
 if (diff > 0) {
@@ -589,11 +593,28 @@ this.nextBanner();
 } else {
 this.goToBanner(this.currentBannerIndex);
 }
+
+this.resumeBannerRotation();
 };
 
 bannersWrapper.addEventListener('touchstart', onTouchStart);
 bannersWrapper.addEventListener('touchmove', onTouchMove);
 bannersWrapper.addEventListener('touchend', onTouchEnd);
+}
+
+pauseBannerRotation() {
+if (this.bannerInterval) {
+clearInterval(this.bannerInterval);
+this.bannerInterval = null;
+}
+}
+
+resumeBannerRotation() {
+if (this.banners && this.banners.length > 1 && !this.bannerInterval) {
+setTimeout(() => {
+this.startBannerRotation();
+}, 5000);
+}
 }
 
 nextBanner() {
@@ -616,7 +637,7 @@ const bannersWrapper = document.querySelector('.banners-wrapper');
 const slides = document.querySelectorAll('.banner-slide');
 const dots = document.querySelectorAll('.banner-dot');
 
-if (bannersWrapper) {
+if (bannersWrapper && this.bannerTransitionEnabled) {
 bannersWrapper.style.transform = `translateX(-${this.currentBannerIndex * 100}%)`;
 }
 
@@ -832,29 +853,48 @@ await this.loadNotifications();
 }
 
 setupEventListeners() {
-document.getElementById('floatingMenuBtn').addEventListener('click', () => {
+const floatingMenuBtn = document.getElementById('floatingMenuBtn');
+const notificationsBtn = document.getElementById('notificationsBtn');
+const optionsBtn = document.getElementById('optionsBtn');
+
+if (floatingMenuBtn) {
+floatingMenuBtn.addEventListener('click', (e) => {
+e.stopPropagation();
+if (this.isAnimatingFloatingMenu) return;
+
 if (this.isFloatingMenuOpen) {
 this.hideFloatingMenu();
 } else {
 this.showFloatingMenu();
 }
 });
+}
 
-document.getElementById('notificationsBtn').addEventListener('click', () => {
+if (notificationsBtn) {
+notificationsBtn.addEventListener('click', (e) => {
+e.stopPropagation();
+if (this.isAnimatingNotificationsPanel) return;
+
 if (this.isNotificationsOpen) {
 this.hideNotificationsPanel();
 } else {
 this.showNotificationsPanel();
 }
 });
+}
 
-document.getElementById('optionsBtn').addEventListener('click', () => {
+if (optionsBtn) {
+optionsBtn.addEventListener('click', (e) => {
+e.stopPropagation();
+if (this.isAnimatingOptionsMenu) return;
+
 if (this.isOptionsOpen) {
 this.hideOptionsMenu();
 } else {
 this.showOptionsMenu();
 }
 });
+}
 
 document.querySelector('.modal-close')?.addEventListener('click', () => {
 this.hideModal();
@@ -866,10 +906,8 @@ this.hideAlert();
 }
 
 showFloatingMenu() {
-if (this.isFloatingMenuOpen) {
-this.hideFloatingMenu();
-return;
-}
+if (this.isAnimatingFloatingMenu) return;
+this.isAnimatingFloatingMenu = true;
 
 const menuItems = [
 { icon: 'fas fa-home', label: 'Inicio', action: () => window.scrollTo(0, 0) },
@@ -890,7 +928,8 @@ menuItems.forEach(item => {
 const menuItem = document.createElement('button');
 menuItem.className = 'floating-menu-item';
 menuItem.innerHTML = `<i class="${item.icon}"></i><span>${item.label}</span>`;
-menuItem.addEventListener('click', () => {
+menuItem.addEventListener('click', (e) => {
+e.stopPropagation();
 item.action();
 this.hideFloatingMenu();
 });
@@ -899,13 +938,12 @@ menu.appendChild(menuItem);
 
 document.body.appendChild(menu);
 
-// Forzar reflow para la animación
 setTimeout(() => {
 menu.classList.add('show');
 this.isFloatingMenuOpen = true;
+this.isAnimatingFloatingMenu = false;
 }, 10);
 
-// Cerrar al hacer clic fuera
 setTimeout(() => {
 const closeOnClickOutside = (e) => {
 if (!menu.contains(e.target) && e.target.id !== 'floatingMenuBtn') {
@@ -918,6 +956,9 @@ document.addEventListener('click', closeOnClickOutside);
 }
 
 hideFloatingMenu() {
+if (this.isAnimatingFloatingMenu) return;
+this.isAnimatingFloatingMenu = true;
+
 const menu = document.querySelector('.floating-menu');
 if (menu) {
 menu.classList.remove('show');
@@ -926,17 +967,17 @@ if (menu.parentNode) {
 menu.parentNode.removeChild(menu);
 }
 this.isFloatingMenuOpen = false;
+this.isAnimatingFloatingMenu = false;
 }, 300);
+} else {
+this.isAnimatingFloatingMenu = false;
 }
 }
 
 showOptionsMenu() {
-if (this.isOptionsOpen) {
-this.hideOptionsMenu();
-return;
-}
+if (this.isAnimatingOptionsMenu) return;
+this.isAnimatingOptionsMenu = true;
 
-// Verificar tema actual para mostrar la opción correcta
 const isDarkMode = document.body.classList.contains('dark-mode');
 const themeLabel = isDarkMode ? 'Tema Claro' : 'Tema Oscuro';
 const themeIcon = isDarkMode ? 'fas fa-sun' : 'fas fa-moon';
@@ -955,7 +996,8 @@ menuItems.forEach(item => {
 const menuItem = document.createElement('button');
 menuItem.className = 'options-menu-item';
 menuItem.innerHTML = `<i class="${item.icon}"></i><span>${item.label}</span>`;
-menuItem.addEventListener('click', () => {
+menuItem.addEventListener('click', (e) => {
+e.stopPropagation();
 item.action();
 this.hideOptionsMenu();
 });
@@ -965,18 +1007,20 @@ menu.appendChild(menuItem);
 const closeBtn = document.createElement('button');
 closeBtn.className = 'options-menu-close';
 closeBtn.innerHTML = '<i class="fas fa-times"></i>';
-closeBtn.addEventListener('click', () => this.hideOptionsMenu());
+closeBtn.addEventListener('click', (e) => {
+e.stopPropagation();
+this.hideOptionsMenu();
+});
 menu.appendChild(closeBtn);
 
 document.body.appendChild(menu);
 
-// Forzar reflow para la animación
 setTimeout(() => {
 menu.classList.add('active');
 this.isOptionsOpen = true;
+this.isAnimatingOptionsMenu = false;
 }, 10);
 
-// Cerrar al hacer clic fuera
 setTimeout(() => {
 const closeOnClickOutside = (e) => {
 if (!menu.contains(e.target) && e.target.id !== 'optionsBtn') {
@@ -989,6 +1033,9 @@ document.addEventListener('click', closeOnClickOutside);
 }
 
 hideOptionsMenu() {
+if (this.isAnimatingOptionsMenu) return;
+this.isAnimatingOptionsMenu = true;
+
 const menu = document.querySelector('.options-menu');
 if (menu) {
 menu.classList.remove('active');
@@ -997,24 +1044,24 @@ if (menu.parentNode) {
 menu.parentNode.removeChild(menu);
 }
 this.isOptionsOpen = false;
+this.isAnimatingOptionsMenu = false;
 }, 300);
+} else {
+this.isAnimatingOptionsMenu = false;
 }
 }
 
 toggleTheme() {
 const isDarkMode = document.body.classList.contains('dark-mode');
 if (isDarkMode) {
-// Cambiar a tema claro
 document.body.classList.remove('dark-mode');
 document.body.classList.add('light-mode');
 localStorage.setItem('userTheme', 'light-mode');
 } else {
-// Cambiar a tema oscuro
 document.body.classList.remove('light-mode');
 document.body.classList.add('dark-mode');
 localStorage.setItem('userTheme', 'dark-mode');
 }
-// Actualizar meta theme-color
 this.applyTheme();
 }
 
@@ -1027,12 +1074,9 @@ this.hideOptionsMenu();
 }
 
 showNotificationsPanel() {
-if (this.isNotificationsOpen) {
-this.hideNotificationsPanel();
-return;
-}
+if (this.isAnimatingNotificationsPanel) return;
+this.isAnimatingNotificationsPanel = true;
 
-// Quitar el globo de notificación al abrir
 this.clearNotificationBadge();
 
 const panel = document.createElement('div');
@@ -1063,29 +1107,34 @@ this.notifications.map(notification => `
 `;
 
 const closeBtn = panel.querySelector('.close-panel');
-closeBtn.addEventListener('click', () => {
+closeBtn.addEventListener('click', (e) => {
+e.stopPropagation();
 this.hideNotificationsPanel();
 });
 
 const overlay = document.createElement('div');
 overlay.className = 'notifications-overlay';
 
-overlay.addEventListener('click', () => {
+overlay.addEventListener('click', (e) => {
+e.stopPropagation();
 this.hideNotificationsPanel();
 });
 
 document.body.appendChild(overlay);
 document.body.appendChild(panel);
 
-// Forzar reflow para la animación
 setTimeout(() => {
 overlay.classList.add('active');
 panel.classList.add('active');
 this.isNotificationsOpen = true;
+this.isAnimatingNotificationsPanel = false;
 }, 10);
 }
 
 hideNotificationsPanel() {
+if (this.isAnimatingNotificationsPanel) return;
+this.isAnimatingNotificationsPanel = true;
+
 const panel = document.querySelector('.notifications-panel');
 const overlay = document.querySelector('.notifications-overlay');
 
@@ -1093,6 +1142,8 @@ if (panel) {
 panel.classList.remove('active');
 setTimeout(() => {
 if (panel.parentNode) panel.parentNode.removeChild(panel);
+this.isNotificationsOpen = false;
+this.isAnimatingNotificationsPanel = false;
 }, 300);
 }
 
@@ -1102,22 +1153,16 @@ setTimeout(() => {
 if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
 }, 300);
 }
-
-this.isNotificationsOpen = false;
 }
 
 clearNotificationBadge() {
-// Quitar el globo de notificación visualmente
 this.unreadCount = 0;
 this.updateNotificationBadge();
-
-// Marcar todas las notificaciones como leídas en el servidor
 this.markAllNotificationsAsRead();
 }
 
 async markAllNotificationsAsRead() {
 try {
-// Marcar cada notificación no leída como leída
 for (const notification of this.notifications) {
 if (!notification.is_read) {
 await this.markAsRead(notification.id);
@@ -1205,10 +1250,8 @@ modal.classList.remove('active');
 document.addEventListener('DOMContentLoaded', () => {
 const userTheme = localStorage.getItem('userTheme');
 if (userTheme) {
-// Aplicar el tema guardado por el usuario
 document.body.classList.add(userTheme);
 }
-// Si no hay tema guardado, se aplicará el tema del sistema automáticamente   
 new ClientApp();
 });
 
