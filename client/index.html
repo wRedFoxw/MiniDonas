@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Mi WebApp</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="all.min.css">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#e44d26">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+</head>
+<body>
+<!-- Loading Screen -->
+<div id="loading" class="loading-screen">
+<div class="loading-content">
+<div class="loading-logo">
+<i class="fas fa-shopping-bag"></i>
+</div>
+<div class="loading-text">Iniciando aplicación...</div>
+<div class="loading-progress">
+<div class="progress-bar"></div>
+</div>
+<div class="loading-stats">
+<span id="loadingStatus">Cargando...</span>
+</div>
+</div>
+</div>
+
+<!-- App Content -->
+<div class="app" style="display: none;">
+<header class="header">
+<div class="logo">
+<img id="logoImage" src="" alt="Logo">
+</div>
+<div class="header-buttons">
+<button id="notificationsBtn" class="icon-button"><i class="fas fa-bell"></i></button>
+<button id="optionsBtn" class="icon-button"><i class="fas fa-cog"></i></button>
+</div>
+</header>
+
+<section class="banner-container">
+<div id="banner" class="banner"></div>
+</section>
+
+<main class="main">
+<div id="productsContainer" class="products-container">
+<div class="skeleton-card">
+<div class="skeleton-image"></div>
+<div class="skeleton-text"></div>
+<div class="skeleton-text short"></div>
+<div class="skeleton-buttons"></div>
+</div>
+</div>
+</main>
+
+<button id="floatingMenuBtn" class="floating-button"><i class="fas fa-bars"></i></button>
+
+<footer class="footer">
+<a href="#" class="social-button"><i class="fab fa-facebook-f"></i></a>
+<a href="#" class="social-button"><i class="fab fa-instagram"></i></a>
+<a href="#" class="social-button"><i class="fab fa-youtube"></i></a>
+</footer>
+</div>
+
+<!-- Modal Personalizado -->
+<div id="customModal" class="custom-modal">
+<div class="modal-content">
+<div class="modal-header">
+<h3 id="modalTitle">Título</h3>
+<button class="modal-close">&times;</button>
+</div>
+<div class="modal-body">
+<p id="modalMessage">Mensaje</p>
+</div>
+<div class="modal-footer">
+<button id="modalCancel" class="btn-secondary">Cancelar</button>
+<button id="modalConfirm" class="btn-primary">Aceptar</button>
+</div>
+</div>
+</div>
+
+<!-- Alert Personalizado -->
+<div id="customAlert" class="custom-alert">
+<div class="alert-content">
+<div class="alert-icon">
+<i class="fas fa-info-circle"></i>
+</div>
+<div class="alert-message" id="alertMessage">Mensaje de alerta</div>
+<button class="alert-close" id="alertClose">Aceptar</button>
+</div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

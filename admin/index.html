@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard Admin</title>
+<link rel="stylesheet" href="admin.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+<div class="dashboard">
+<header class="dashboard-header">
+<h1>Panel de Administración</h1>
+<button id="logoutBtn" class="logout-btn"><i class="fas fa-sign-out-alt"></i> Cerrar Sesión</button>
+</header>
+
+<nav class="dashboard-nav">
+<button class="nav-btn active" data-tab="products"><i class="fas fa-box"></i> Productos</button>
+<button class="nav-btn" data-tab="banners"><i class="fas fa-image"></i> Banners</button>
+<button class="nav-btn" data-tab="notifications"><i class="fas fa-bell"></i> Notificaciones</button>
+<button class="nav-btn" data-tab="settings"><i class="fas fa-cog"></i> Configuración</button>
+</nav>
+
+<main class="dashboard-main">
+<section id="products-tab" class="tab-content active">
+<div class="section-header">
+<h2><i class="fas fa-box"></i> Gestión de Productos</h2>
+<button id="addProductBtn" class="btn-primary"><i class="fas fa-plus"></i> Agregar Producto</button>
+</div>
+<div class="products-list" id="productsList"></div>
+</section>
+
+<section id="banners-tab" class="tab-content">
+<div class="section-header">
+<h2><i class="fas fa-image"></i> Gestión de Banners</h2>
+<button id="addBannerBtn" class="btn-primary"><i class="fas fa-plus"></i> Agregar Banner</button>
+</div>
+<div class="banners-list" id="bannersList"></div>
+</section>
+
+<section id="notifications-tab" class="tab-content">
+<div class="section-header">
+<h2><i class="fas fa-bell"></i> Gestión de Notificaciones</h2>
+<div class="header-stats">
+<div class="stat-item">
+<i class="fas fa-bell"></i>
+<span id="totalNotifications">0</span>
+<small>Total</small>
+</div>
+<div class="stat-item">
+<i class="fas fa-paper-plane"></i>
+<span id="sentNotifications">0</span>
+<small>Enviadas</small>
+</div>
+<div class="stat-item">
+<i class="fas fa-mobile-alt"></i>
+<span id="totalDevices">0</span>
+<small>Dispositivos</small>
+</div>
+</div>
+<button id="addNotificationBtn" class="btn-primary"><i class="fas fa-plus"></i> Nueva Notificación</button>
+</div>
+<div class="notifications-list" id="notificationsList"></div>
+</section>
+
+<section id="settings-tab" class="tab-content">
+<div class="section-header">
+<h2><i class="fas fa-cog"></i> Configuración General</h2>
+</div>
+<form id="settingsForm" class="settings-form">
+<div class="form-group">
+<label for="logoUpload"><i class="fas fa-upload"></i> Logo de la App:</label>
+<input type="file" id="logoUpload" accept="image/*">
+<div id="logoPreview" class="image-preview"></div>
+<input type="hidden" id="logoData">
+</div>
+<div class="form-group">
+<label for="themeColor"><i class="fas fa-palette"></i> Color del Tema:</label>
+<input type="color" id="themeColor" name="theme_color" value="#e44d26">
+</div>
+<button type="submit" class="btn-primary"><i class="fas fa-save"></i> Guardar Configuración</button>
+</form>
+</section>
+</main>
+</div>
+
+<div id="productModal" class="modal">
+<div class="modal-content">
+<span class="close">&times;</span>
+<h3 id="productModalTitle"><i class="fas fa-box"></i> Agregar Producto</h3>
+<form id="productForm">
+<input type="hidden" id="productId">
+<div class="form-group">
+<label for="productName"><i class="fas fa-tag"></i> Nombre:</label>
+<input type="text" id="productName" required>
+</div>
+<div class="form-group">
+<label for="productDescription"><i class="fas fa-align-left"></i> Descripción:</label>
+<textarea id="productDescription" rows="3"></textarea>
+</div>
+<div class="form-group">
+<label for="productPrice"><i class="fas fa-dollar-sign"></i> Precio:</label>
+<input type="number" id="productPrice" step="0.01" required>
+</div>
+<div class="form-group">
+<label for="productImageUpload"><i class="fas fa-image"></i> Imagen del Producto:</label>
+<input type="file" id="productImageUpload" accept="image/*" required>
+<div id="productImagePreview" class="image-preview"></div>
+<input type="hidden" id="productImageData">
+</div>
+<div class="form-group checkbox-group">
+<label><input type="checkbox" id="productActive"> <i class="fas fa-eye"></i> Activo</label>
+<label><input type="checkbox" id="productNew"> <i class="fas fa-star"></i> Nuevo</label>
+<label><input type="checkbox" id="productOffer"> <i class="fas fa-percentage"></i> Oferta</label>
+<label><input type="checkbox" id="productFeatured"> <i class="fas fa-award"></i> Destacado</label>
+<label><input type="checkbox" id="productBestSeller"> <i class="fas fa-fire"></i> Más Vendido</label>
+</div>
+<button type="submit" class="btn-primary"><i class="fas fa-save"></i> Guardar Producto</button>
+</form>
+</div>
+</div>
+
+<div id="bannerModal" class="modal">
+<div class="modal-content">
+<span class="close">&times;</span>
+<h3 id="bannerModalTitle"><i class="fas fa-image"></i> Agregar Banner</h3>
+<form id="bannerForm">
+<input type="hidden" id="bannerId">
+<div class="form-group">
+<label for="bannerTitle"><i class="fas fa-heading"></i> Título:</label>
+<input type="text" id="bannerTitle">
+</div>
+<div class="form-group">
+<label for="bannerSubtitle"><i class="fas fa-subscript"></i> Subtítulo:</label>
+<input type="text" id="bannerSubtitle">
+</div>
+<div class="form-group">
+<label for="bannerImageUpload"><i class="fas fa-image"></i> Imagen del Banner:</label>
+<input type="file" id="bannerImageUpload" accept="image/*" required>
+<div id="bannerImagePreview" class="image-preview"></div>
+<input type="hidden" id="bannerImageData">
+</div>
+<div class="form-group">
+<label><input type="checkbox" id="bannerActive"> <i class="fas fa-eye"></i> Activo</label>
+</div>
+<button type="submit" class="btn-primary"><i class="fas fa-save"></i> Guardar Banner</button>
+</form>
+</div>
+</div>
+
+<div id="notificationModal" class="modal">
+<div class="modal-content">
+<span class="close">&times;</span>
+<h3 id="notificationModalTitle"><i class="fas fa-bell"></i> Nueva Notificación</h3>
+<form id="notificationForm">
+<input type="hidden" id="notificationId">
+<div class="form-group">
+<label for="notificationTitle"><i class="fas fa-heading"></i> Título:</label>
+<input type="text" id="notificationTitle" required maxlength="255">
+</div>
+<div class="form-group">
+<label for="notificationMessage"><i class="fas fa-envelope"></i> Mensaje:</label>
+<textarea id="notificationMessage" rows="4" required></textarea>
+</div>
+<div class="form-group">
+<label for="notificationType"><i class="fas fa-tag"></i> Tipo:</label>
+<select id="notificationType">
+<option value="info">Información</option>
+<option value="success">Éxito</option>
+<option value="warning">Advertencia</option>
+<option value="error">Error</option>
+<option value="promo">Promoción</option>
+</select>
+</div>
+<div class="form-group">
+<label for="notificationSendAt"><i class="fas fa-clock"></i> Programar envío:</label>
+<input type="datetime-local" id="notificationSendAt">
+</div>
+<div class="form-group checkbox-group">
+<label><input type="checkbox" id="notificationActive" checked> <i class="fas fa-eye"></i> Activa</label>
+<label><input type="checkbox" id="notificationSendNow"> <i class="fas fa-paper-plane"></i> Enviar inmediatamente</label>
+</div>
+<div class="form-actions">
+<button type="submit" class="btn-primary"><i class="fas fa-save"></i> Guardar Notificación</button>
+<button type="button" id="sendNotificationBtn" class="btn-success"><i class="fas fa-paper-plane"></i> Enviar Ahora</button>
+</div>
+</form>
+</div>
+</div>
+
+<div id="systemNotifications"></div>
+
+<script src="admin.js"></script>
+</body>
+</html>
