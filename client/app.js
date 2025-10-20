@@ -22,6 +22,7 @@ this.init();
 
 async init() {
 try {
+this.applySystemTheme();
 this.showLoading(10);
 await this.cleanStorage();
 this.showLoading(30);
@@ -49,6 +50,37 @@ this.hideLoading();
 } catch (error) {
 console.error('Error inicializando la aplicación:', error);
 this.showAlert('Error', 'No se pudo cargar la aplicación. Intenta recargar la página.');
+}
+}
+
+applySystemTheme() {
+// Eliminar clases de tema previas
+document.body.classList.remove('light-mode', 'dark-mode');
+
+// Aplicar tema del sistema
+if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+// Tema oscuro del sistema
+document.body.classList.add('dark-mode');
+} else {
+// Tema claro del sistema (por defecto)
+document.body.classList.add('light-mode');
+}
+
+// Escuchar cambios en la preferencia del sistema
+if (window.matchMedia) {
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
+// Solo cambiar si el usuario no ha seleccionado un tema manualmente
+const userTheme = localStorage.getItem('userTheme');
+if (!userTheme) {
+if (e.matches) {
+document.body.classList.remove('light-mode');
+document.body.classList.add('dark-mode');
+} else {
+document.body.classList.remove('dark-mode');
+document.body.classList.add('light-mode');
+}
+}
+});
 }
 }
 
@@ -868,10 +900,10 @@ menu.appendChild(menuItem);
 document.body.appendChild(menu);
 
 // Forzar reflow para la animación
-menu.offsetHeight;
+setTimeout(() => {
 menu.classList.add('show');
-
 this.isFloatingMenuOpen = true;
+}, 10);
 
 // Cerrar al hacer clic fuera
 setTimeout(() => {
@@ -893,9 +925,9 @@ setTimeout(() => {
 if (menu.parentNode) {
 menu.parentNode.removeChild(menu);
 }
+this.isFloatingMenuOpen = false;
 }, 300);
 }
-this.isFloatingMenuOpen = false;
 }
 
 showOptionsMenu() {
@@ -904,8 +936,13 @@ this.hideOptionsMenu();
 return;
 }
 
+// Verificar tema actual para mostrar la opción correcta
+const isDarkMode = document.body.classList.contains('dark-mode');
+const themeLabel = isDarkMode ? 'Tema Claro' : 'Tema Oscuro';
+const themeIcon = isDarkMode ? 'fas fa-sun' : 'fas fa-moon';
+
 const menuItems = [
-{ icon: 'fas fa-palette', label: 'Cambiar Tema', action: () => this.toggleTheme() },
+{ icon: themeIcon, label: themeLabel, action: () => this.toggleTheme() },
 { icon: 'fas fa-bell', label: 'Notificaciones', action: () => this.toggleNotifications() },
 { icon: 'fas fa-shield-alt', label: 'Privacidad', action: () => this.showAlert('Privacidad', 'Tu información está protegida.') },
 { icon: 'fas fa-question-circle', label: 'Ayuda', action: () => this.showAlert('Ayuda', 'Contacta al soporte técnico para ayuda.') }
@@ -934,10 +971,10 @@ menu.appendChild(closeBtn);
 document.body.appendChild(menu);
 
 // Forzar reflow para la animación
-menu.offsetHeight;
+setTimeout(() => {
 menu.classList.add('active');
-
 this.isOptionsOpen = true;
+}, 10);
 
 // Cerrar al hacer clic fuera
 setTimeout(() => {
@@ -959,15 +996,26 @@ setTimeout(() => {
 if (menu.parentNode) {
 menu.parentNode.removeChild(menu);
 }
+this.isOptionsOpen = false;
 }, 300);
 }
-this.isOptionsOpen = false;
 }
 
 toggleTheme() {
-document.body.classList.toggle('dark-mode');
-document.body.classList.toggle('light-mode');
-this.hideOptionsMenu();
+const isDarkMode = document.body.classList.contains('dark-mode');
+if (isDarkMode) {
+// Cambiar a tema claro
+document.body.classList.remove('dark-mode');
+document.body.classList.add('light-mode');
+localStorage.setItem('userTheme', 'light-mode');
+} else {
+// Cambiar a tema oscuro
+document.body.classList.remove('light-mode');
+document.body.classList.add('dark-mode');
+localStorage.setItem('userTheme', 'dark-mode');
+}
+// Actualizar meta theme-color
+this.applyTheme();
 }
 
 toggleNotifications() {
@@ -1030,13 +1078,11 @@ document.body.appendChild(overlay);
 document.body.appendChild(panel);
 
 // Forzar reflow para la animación
-overlay.offsetHeight;
-panel.offsetHeight;
-
+setTimeout(() => {
 overlay.classList.add('active');
 panel.classList.add('active');
-
 this.isNotificationsOpen = true;
+}, 10);
 }
 
 hideNotificationsPanel() {
@@ -1060,17 +1106,6 @@ if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
 this.isNotificationsOpen = false;
 }
 
-getNotificationIcon(type) {
-const icons = {
-'info': 'fas fa-info-circle',
-'success': 'fas fa-check-circle',
-'warning': 'fas fa-exclamation-triangle',
-'error': 'fas fa-exclamation-circle',
-'promo': 'fas fa-gift'
-};
-return icons[type] || 'fas fa-bell';
-}
-
 clearNotificationBadge() {
 // Quitar el globo de notificación visualmente
 this.unreadCount = 0;
@@ -1091,6 +1126,17 @@ await this.markAsRead(notification.id);
 } catch (error) {
 console.error('Error al marcar todas las notificaciones como leídas:', error);
 }
+}
+
+getNotificationIcon(type) {
+const icons = {
+'info': 'fas fa-info-circle',
+'success': 'fas fa-check-circle',
+'warning': 'fas fa-exclamation-triangle',
+'error': 'fas fa-exclamation-circle',
+'promo': 'fas fa-gift'
+};
+return icons[type] || 'fas fa-bell';
 }
 
 showAlert(title, message) {
@@ -1157,6 +1203,12 @@ modal.classList.remove('active');
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+const userTheme = localStorage.getItem('userTheme');
+if (userTheme) {
+// Aplicar el tema guardado por el usuario
+document.body.classList.add(userTheme);
+}
+// Si no hay tema guardado, se aplicará el tema del sistema automáticamente   
 new ClientApp();
 });
 
