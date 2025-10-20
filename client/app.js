@@ -13,6 +13,9 @@ this.isConnected = false;
 this.reconnectTimeout = null;
 this.currentBannerIndex = 0;
 this.bannerInterval = null;
+this.isNotificationsOpen = false;
+this.isOptionsOpen = false;
+this.isFloatingMenuOpen = false;
 this.setupAppLifecycle();
 this.init();
 }
@@ -798,15 +801,27 @@ await this.loadNotifications();
 
 setupEventListeners() {
 document.getElementById('floatingMenuBtn').addEventListener('click', () => {
+if (this.isFloatingMenuOpen) {
+this.hideFloatingMenu();
+} else {
 this.showFloatingMenu();
+}
 });
 
 document.getElementById('notificationsBtn').addEventListener('click', () => {
+if (this.isNotificationsOpen) {
+this.hideNotificationsPanel();
+} else {
 this.showNotificationsPanel();
+}
 });
 
 document.getElementById('optionsBtn').addEventListener('click', () => {
+if (this.isOptionsOpen) {
+this.hideOptionsMenu();
+} else {
 this.showOptionsMenu();
+}
 });
 
 document.querySelector('.modal-close')?.addEventListener('click', () => {
@@ -819,6 +834,11 @@ this.hideAlert();
 }
 
 showFloatingMenu() {
+if (this.isFloatingMenuOpen) {
+this.hideFloatingMenu();
+return;
+}
+
 const menuItems = [
 { icon: 'fas fa-home', label: 'Inicio', action: () => window.scrollTo(0, 0) },
 { icon: 'fas fa-sync', label: 'Recargar', action: () => location.reload() },
@@ -828,24 +848,41 @@ const menuItems = [
 
 let menu = document.querySelector('.floating-menu');
 if (menu) {
-this.hideFloatingMenu();
-return;
+menu.remove();
 }
 
 menu = document.createElement('div');
-menu.className = 'floating-menu active';
+menu.className = 'floating-menu';
 
 menuItems.forEach(item => {
 const menuItem = document.createElement('button');
 menuItem.className = 'floating-menu-item';
 menuItem.innerHTML = `<i class="${item.icon}"></i><span>${item.label}</span>`;
-menuItem.addEventListener('click', item.action);
+menuItem.addEventListener('click', () => {
+item.action();
+this.hideFloatingMenu();
+});
 menu.appendChild(menuItem);
 });
 
 document.body.appendChild(menu);
 
-setTimeout(() => menu.classList.add('show'), 10);
+// Forzar reflow para la animación
+menu.offsetHeight;
+menu.classList.add('show');
+
+this.isFloatingMenuOpen = true;
+
+// Cerrar al hacer clic fuera
+setTimeout(() => {
+const closeOnClickOutside = (e) => {
+if (!menu.contains(e.target) && e.target.id !== 'floatingMenuBtn') {
+this.hideFloatingMenu();
+document.removeEventListener('click', closeOnClickOutside);
+}
+};
+document.addEventListener('click', closeOnClickOutside);
+}, 100);
 }
 
 hideFloatingMenu() {
@@ -858,11 +895,17 @@ menu.parentNode.removeChild(menu);
 }
 }, 300);
 }
+this.isFloatingMenuOpen = false;
 }
 
 showOptionsMenu() {
+if (this.isOptionsOpen) {
+this.hideOptionsMenu();
+return;
+}
+
 const menuItems = [
-{ icon: 'fas fa-palette', label: 'Tema', action: () => this.toggleTheme() },
+{ icon: 'fas fa-palette', label: 'Cambiar Tema', action: () => this.toggleTheme() },
 { icon: 'fas fa-bell', label: 'Notificaciones', action: () => this.toggleNotifications() },
 { icon: 'fas fa-shield-alt', label: 'Privacidad', action: () => this.showAlert('Privacidad', 'Tu información está protegida.') },
 { icon: 'fas fa-question-circle', label: 'Ayuda', action: () => this.showAlert('Ayuda', 'Contacta al soporte técnico para ayuda.') }
@@ -875,7 +918,10 @@ menuItems.forEach(item => {
 const menuItem = document.createElement('button');
 menuItem.className = 'options-menu-item';
 menuItem.innerHTML = `<i class="${item.icon}"></i><span>${item.label}</span>`;
-menuItem.addEventListener('click', item.action);
+menuItem.addEventListener('click', () => {
+item.action();
+this.hideOptionsMenu();
+});
 menu.appendChild(menuItem);
 });
 
@@ -887,7 +933,22 @@ menu.appendChild(closeBtn);
 
 document.body.appendChild(menu);
 
-setTimeout(() => menu.classList.add('active'), 10);
+// Forzar reflow para la animación
+menu.offsetHeight;
+menu.classList.add('active');
+
+this.isOptionsOpen = true;
+
+// Cerrar al hacer clic fuera
+setTimeout(() => {
+const closeOnClickOutside = (e) => {
+if (!menu.contains(e.target) && e.target.id !== 'optionsBtn') {
+this.hideOptionsMenu();
+document.removeEventListener('click', closeOnClickOutside);
+}
+};
+document.addEventListener('click', closeOnClickOutside);
+}, 100);
 }
 
 hideOptionsMenu() {
@@ -900,6 +961,7 @@ menu.parentNode.removeChild(menu);
 }
 }, 300);
 }
+this.isOptionsOpen = false;
 }
 
 toggleTheme() {
@@ -917,8 +979,16 @@ this.hideOptionsMenu();
 }
 
 showNotificationsPanel() {
+if (this.isNotificationsOpen) {
+this.hideNotificationsPanel();
+return;
+}
+
+// Quitar el globo de notificación al abrir
+this.clearNotificationBadge();
+
 const panel = document.createElement('div');
-panel.className = 'notifications-panel active';
+panel.className = 'notifications-panel';
 
 panel.innerHTML = `
 <div class="notifications-header">
@@ -950,7 +1020,7 @@ this.hideNotificationsPanel();
 });
 
 const overlay = document.createElement('div');
-overlay.className = 'notifications-overlay active';
+overlay.className = 'notifications-overlay';
 
 overlay.addEventListener('click', () => {
 this.hideNotificationsPanel();
@@ -958,6 +1028,15 @@ this.hideNotificationsPanel();
 
 document.body.appendChild(overlay);
 document.body.appendChild(panel);
+
+// Forzar reflow para la animación
+overlay.offsetHeight;
+panel.offsetHeight;
+
+overlay.classList.add('active');
+panel.classList.add('active');
+
+this.isNotificationsOpen = true;
 }
 
 hideNotificationsPanel() {
@@ -977,6 +1056,8 @@ setTimeout(() => {
 if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
 }, 300);
 }
+
+this.isNotificationsOpen = false;
 }
 
 getNotificationIcon(type) {
@@ -988,6 +1069,28 @@ const icons = {
 'promo': 'fas fa-gift'
 };
 return icons[type] || 'fas fa-bell';
+}
+
+clearNotificationBadge() {
+// Quitar el globo de notificación visualmente
+this.unreadCount = 0;
+this.updateNotificationBadge();
+
+// Marcar todas las notificaciones como leídas en el servidor
+this.markAllNotificationsAsRead();
+}
+
+async markAllNotificationsAsRead() {
+try {
+// Marcar cada notificación no leída como leída
+for (const notification of this.notifications) {
+if (!notification.is_read) {
+await this.markAsRead(notification.id);
+}
+}
+} catch (error) {
+console.error('Error al marcar todas las notificaciones como leídas:', error);
+}
 }
 
 showAlert(title, message) {
