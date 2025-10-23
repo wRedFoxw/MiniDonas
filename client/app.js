@@ -49,6 +49,8 @@ this.setupEventListeners();
 this.applyTheme();
 this.startNotificationPolling();
 this.startBannerRotation();
+// Agregar detección de orientación mejorada
+this.setupOrientationDetection();
 
 setTimeout(() => {
 this.hideLoading();
@@ -57,6 +59,64 @@ this.hideLoading();
 } catch (error) {
 console.error('Error inicializando la aplicación:', error);
 this.showAlert('Error', 'No se pudo cargar la aplicación. Intenta recargar la página.');
+}
+}
+
+setupOrientationDetection() {
+// Detectar orientación inicial
+this.checkOrientation();
+
+// Escuchar cambios de tamaño
+window.addEventListener('resize', () => {
+this.checkOrientation();
+});
+
+// Escuchar evento de orientación específico
+window.addEventListener('orientationchange', () => {
+setTimeout(() => {
+this.checkOrientation();
+}, 300);
+});
+
+// Intentar bloquear orientación
+this.lockOrientation();
+}
+
+checkOrientation() {
+const orientationMessage = document.getElementById('orientationMessage');
+const appContent = document.querySelector('.app');
+if (!orientationMessage || !appContent) return;
+
+const isLandscape = window.innerWidth > window.innerHeight;
+const isTooWide = window.innerWidth > 480;
+
+// Mostrar mensaje si está en landscape Y el ancho es mayor a 480px
+// Esto fuerza el modo vertical en dispositivos móviles y tablets pequeñas
+if (isLandscape && isTooWide) {
+orientationMessage.style.display = 'flex';
+appContent.style.display = 'none';
+} else {
+orientationMessage.style.display = 'none';
+appContent.style.display = 'flex';
+}
+}
+
+lockOrientation() {
+// Intentar bloquear orientación en portrait
+if (screen.orientation && screen.orientation.lock) {
+screen.orientation.lock('portrait').catch(error => {
+console.log('No se pudo bloquear la orientación:', error);
+});
+}
+// Soporte para navegadores antiguos
+else if (screen.lockOrientation) {
+screen.lockOrientation('portrait');
+}
+else if (screen.mozLockOrientation) {
+screen.mozLockOrientation('portrait');
+}
+else if (screen.msLockOrientation) {
+screen.msLockOrientation('portrait');
 }
 }
 
@@ -376,7 +436,7 @@ this.connectRealtime();
 });
 
 window.addEventListener('offline', () => {
-console.log('Conexión de red perdida');
+console.log('Conexión de net perdida');
 this.isConnected = false;
 this.updateConnectionStatus();
 });
@@ -911,9 +971,9 @@ this.isAnimatingFloatingMenu = true;
 
 const menuItems = [
 { icon: 'fas fa-home', label: 'Inicio', action: () => window.scrollTo(0, 0) },
-{ icon: 'fas fa-sync', label: 'Recargar', action: () => location.reload() },
+{ icon: 'fas fa-sync', label: 'Recargar', action: () => this.reloadAndClearCache() },
 { icon: 'fas fa-info-circle', label: 'Acerca de', action: () => this.showAlert('Acerca de', 'Aplicación desarrollada con tecnologías web modernas.') },
-{ icon: 'fas fa-times', label: 'Cerrar', action: () => this.hideFloatingMenu() }
+{ icon: 'fas fa-power-off', label: 'Cerrar App', action: () => this.closeApplication() }
 ];
 
 let menu = document.querySelector('.floating-menu');
@@ -955,6 +1015,27 @@ document.addEventListener('click', closeOnClickOutside);
 }, 100);
 }
 
+async reloadAndClearCache() {
+try {
+// Limpiar cache antes de recargar
+if ('caches' in window) {
+const cacheNames = await caches.keys();
+await Promise.all(
+cacheNames.map(cacheName => caches.delete(cacheName))
+);
+console.log('Cache limpiado antes de recargar');
+}
+
+// Recargar la página forzando carga desde servidor
+location.reload(true);
+
+} catch (error) {
+console.error('Error al limpiar cache:', error);
+// Si falla la limpieza, recargar de todas formas
+location.reload();
+}
+}
+
 hideFloatingMenu() {
 if (this.isAnimatingFloatingMenu) return;
 this.isAnimatingFloatingMenu = true;
@@ -971,6 +1052,83 @@ this.isAnimatingFloatingMenu = false;
 }, 300);
 } else {
 this.isAnimatingFloatingMenu = false;
+}
+}
+
+closeApplication() {
+this.showModal(
+'Cerrar Aplicación',
+'¿Estás seguro de que deseas cerrar la aplicación?',
+() => {
+// Limpiar solo cache (no localStorage)
+this.cleanCacheOnly().then(() => {
+// Cerrar conexiones
+this.closeAllConnections();
+
+// Método directo para cerrar pestaña
+this.closeTabDirectly();
+});
+},
+() => {
+console.log('Cierre de aplicación cancelado');
+}
+);
+}
+
+async cleanCacheOnly() {
+try {
+// Limpiar solo cache de Service Worker (no localStorage)
+if ('caches' in window) {
+const cacheNames = await caches.keys();
+await Promise.all(
+cacheNames.map(cacheName => caches.delete(cacheName))
+);
+}
+
+console.log('Limpieza de cache realizada');
+} catch (error) {
+console.error('Error limpiando cache:', error);
+}
+}
+
+closeAllConnections() {
+if (this.realtimeConnection) {
+this.realtimeConnection.close();
+this.realtimeConnection = null;
+}
+
+if (this.bannerInterval) {
+clearInterval(this.bannerInterval);
+this.bannerInterval = null;
+}
+
+if (this.notificationCheckInterval) {
+clearInterval(this.notificationCheckInterval);
+this.notificationCheckInterval = null;
+}
+}
+
+closeTabDirectly() {
+try {
+// Método principal - funciona en la mayoría de navegadores modernos
+if (window.opener || window.history.length === 1) {
+window.close();
+return;
+}
+
+// Método alternativo
+const newWindow = window.open('', '_self');
+if (newWindow) {
+newWindow.close();
+}
+
+// Último intento directo
+if (!window.closed) {
+window.close();
+}
+
+} catch (error) {
+console.log('No se pudo cerrar automáticamente');
 }
 }
 

@@ -3,15 +3,23 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Mi WebApp</title>
-<link rel="stylesheet" href="styles.css">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-<link rel="manifest" href="manifest.json">
+<meta name="screen-orientation" content="portrait">
+<meta name="full-screen" content="yes">
+<meta name="browsermode" content="application">
+<meta name="x5-orientation" content="portrait">
+<meta name="x5-fullscreen" content="true">
+<meta name="x5-page-mode" content="app">
 <meta name="theme-color" content="#e44d26">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-orientations" content="portrait">
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="all.min.css">
+<link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>MiniDonas</title>
 </head>
+
 <body>
 <!-- Loading Screen -->
 <div id="loading" class="loading-screen">
@@ -26,6 +34,15 @@
 <div class="loading-stats">
 <span id="loadingStatus">Cargando...</span>
 </div>
+</div>
+</div>
+
+<!-- Mensaje de orientación -->
+<div id="orientationMessage" class="orientation-message">
+<div class="orientation-content">
+<i class="fas fa-mobile-alt"></i>
+<h3>Rotar Dispositivo</h3>
+<p>Esta aplicación funciona solo en dispositivos móviles para modo vertical</p>
 </div>
 </div>
 
@@ -59,9 +76,10 @@
 <button id="floatingMenuBtn" class="floating-button"><i class="fas fa-bars"></i></button>
 
 <footer class="footer">
+<div style="margin-right: 20px;display:flex;gap:1rem">
 <a href="#" class="social-button"><i class="fab fa-facebook-f"></i></a>
 <a href="#" class="social-button"><i class="fab fa-instagram"></i></a>
-<a href="#" class="social-button"><i class="fab fa-youtube"></i></a>
+</div>
 </footer>
 </div>
 

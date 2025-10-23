@@ -1,6 +1,6 @@
 {
-  "name": "Mi WebApp",
-  "short_name": "WebApp",
+  "name": "MiniDonas",
+  "short_name": "MiniDonas",
   "start_url": "/client",
   "display": "standalone",
   "background_color": "#ffffff",
