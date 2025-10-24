@@ -102,21 +102,10 @@ appContent.style.display = 'flex';
 }
 
 lockOrientation() {
-// Intentar bloquear orientación en portrait
 if (screen.orientation && screen.orientation.lock) {
 screen.orientation.lock('portrait').catch(error => {
 console.log('No se pudo bloquear la orientación:', error);
 });
-}
-// Soporte para navegadores antiguos
-else if (screen.lockOrientation) {
-screen.lockOrientation('portrait');
-}
-else if (screen.mozLockOrientation) {
-screen.mozLockOrientation('portrait');
-}
-else if (screen.msLockOrientation) {
-screen.msLockOrientation('portrait');
 }
 }
 
