@@ -1,29 +1,27 @@
 {
-  "name": "FreshMarket - Tienda de Alimentos",
-  "short_name": "FreshMarket",
-  "description": "Tienda en línea para la compra y envío de alimentos frescos y de calidad a Cuba.",
-  "start_url": "/",
+  "name": "MiniDonas",
+  "short_name": "MiniDonas",
+  "start_url": "/client",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#4CAF50",
-  "orientation": "portrait-primary",
+  "theme_color": "#e44d26",
+  "orientation": "portrait",
   "icons": [
     {
-      "src": "/icons/icon-192.png",
+      "src": "icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any"
+	  "purpose": "any"
     },
     {
-      "src": "/icons/icon-512.png",
+      "src": "icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any"
+	  "purpose": "any"
     }
   ],
   "categories": [
-    "food",
-    "shopping"
+    "food"
   ],
   "lang": "es"
 }
