@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "com.minidonas.twa",
+        "sha256_cert_fingerprints": ["67:A1:D9:16:AA:25:8A:C8:21:92:0C:A0:0A:9F:70:3F:9D:6E:3C:D9:CA:C0:79:94:06:5D:FC:ED:B7:67:88:08"]
+      }
+    }]
