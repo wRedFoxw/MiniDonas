@@ -3,14 +3,52 @@ import pool from '../config/database.js';
 
 const router = express.Router();
 
+// Función para actualizar automáticamente las etiquetas de productos
+async function updateProductBadges(productId = null) {
+let client;
+try {
+client = await pool.connect();
+
+// Actualizar productos destacados y más vendidos basado en likes
+await client.query(`
+UPDATE products 
+SET 
+is_featured = (likes >= 50 AND likes < 100),
+is_best_seller = (likes >= 100),
+is_new = (is_new AND created_at >= NOW() - INTERVAL '15 days')
+WHERE is_active = true
+${productId ? 'AND id = $1' : ''}
+`, productId ? [productId] : []);
+
+console.log(`Badges actualizados ${productId ? `para producto ${productId}` : 'para todos los productos'}`);
+} catch (error) {
+console.error('Error actualizando badges:', error);
+} finally {
+if (client) client.release();
+}
+}
+
 router.get('/products', async (req, res) => {
 let client;
 try {
+// Primero actualizamos los badges
+await updateProductBadges();
+
 client = await pool.connect();
 const result = await client.query(`
 SELECT * FROM products 
 WHERE is_active = true 
-ORDER BY created_at DESC
+ORDER BY 
+-- Orden de prioridad de badges
+CASE 
+WHEN is_new = true THEN 1
+WHEN is_offer = true THEN 2
+WHEN is_best_seller = true THEN 3
+WHEN is_featured = true THEN 4
+ELSE 5
+END,
+-- Orden secundario por fecha de creación (más recientes primero)
+created_at DESC
 `);
 res.json(result.rows);
 } catch (error) {
@@ -77,24 +115,36 @@ let client;
 try {
 client = await pool.connect();
 await client.query('BEGIN');
+
+// Verificar si ya votó
 const existingVotes = await client.query(
 'SELECT * FROM votes WHERE product_id = $1 AND device_id = $2',
 [productId, deviceId]
 );
+
 if (existingVotes.rows.length > 0) {
 await client.query('ROLLBACK');
 return res.status(400).json({ error: 'Ya has votado por este producto' });
 }
+
+// Registrar voto
 await client.query(
 'INSERT INTO votes (product_id, device_id, type) VALUES ($1, $2, $3)',
 [productId, deviceId, type]
 );
+
+// Actualizar contadores de likes/dislikes
 const columnToUpdate = type === 'like' ? 'likes' : 'dislikes';
 await client.query(
 `UPDATE products SET ${columnToUpdate} = ${columnToUpdate} + 1 WHERE id = $1`,
 [productId]
 );
+
 await client.query('COMMIT');
+
+// Actualizar badges del producto después del voto
+await updateProductBadges(productId);
+
 res.json({ success: true, message: `Voto registrado (${type})` });
 } catch (error) {
 if (client) await client.query('ROLLBACK');
@@ -102,6 +152,17 @@ console.error('Error al registrar voto:', error);
 res.status(500).json({ error: 'Error interno del servidor' });
 } finally {
 if (client) client.release();
+}
+});
+
+// Endpoint para forzar actualización de badges (útil para mantenimiento)
+router.post('/update-badges', async (req, res) => {
+try {
+await updateProductBadges();
+res.json({ success: true, message: 'Badges actualizados correctamente' });
+} catch (error) {
+console.error('Error actualizando badges:', error);
+res.status(500).json({ error: 'Error interno del servidor' });
 }
 });
 

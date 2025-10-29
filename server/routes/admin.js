@@ -551,4 +551,109 @@ if (client) client.release();
 }
 });
 
+// Endpoint para forzar actualización de badges
+router.post('/products/update-badges', async (req, res) => {
+let client;
+try {
+client = await pool.connect();
+
+console.log('Iniciando actualización forzada de badges...');
+
+// Actualizar badges basado en reglas de negocio
+const updateResult = await client.query(`
+UPDATE products 
+SET 
+is_featured = (likes >= 50 AND likes < 100),
+is_best_seller = (likes >= 100),
+is_new = (is_new AND created_at >= NOW() - INTERVAL '15 days'),
+updated_at = NOW()
+WHERE is_active = true
+RETURNING id, name, likes, is_featured, is_best_seller, is_new
+`);
+
+// Contar estadísticas de la actualización
+const stats = {
+total: updateResult.rows.length,
+featured: updateResult.rows.filter(p => p.is_featured).length,
+best_seller: updateResult.rows.filter(p => p.is_best_seller).length,
+new: updateResult.rows.filter(p => p.is_new).length
+};
+
+console.log('Actualización de badges completada:', stats);
+
+// Notificar a todos los clientes sobre la actualización masiva
+notifyClients('products_updated', { 
+action: 'bulk_update',
+stats: stats,
+message: 'Badges actualizados automáticamente'
+});
+
+res.json({ 
+success: true, 
+message: 'Badges actualizados correctamente',
+stats: stats,
+updatedProducts: updateResult.rows.length
+});
+
+} catch (error) {
+console.error('Error al actualizar badges:', error);
+res.status(500).json({ 
+error: 'Error interno del servidor',
+details: process.env.NODE_ENV === 'development' ? error.message : undefined
+});
+} finally {
+if (client) client.release();
+}
+});
+
+// Endpoint para obtener estadísticas de badges actuales
+router.get('/products/badges-stats', async (req, res) => {
+let client;
+try {
+client = await pool.connect();
+
+const statsResult = await client.query(`
+SELECT 
+COUNT(*) as total_products,
+COUNT(CASE WHEN is_featured = true THEN 1 END) as featured_count,
+COUNT(CASE WHEN is_best_seller = true THEN 1 END) as best_seller_count,
+COUNT(CASE WHEN is_new = true THEN 1 END) as new_count,
+COUNT(CASE WHEN is_offer = true THEN 1 END) as offer_count,
+COUNT(CASE WHEN likes >= 50 AND likes < 100 THEN 1 END) as eligible_featured,
+COUNT(CASE WHEN likes >= 100 THEN 1 END) as eligible_best_seller,
+COUNT(CASE WHEN is_new = true AND created_at < NOW() - INTERVAL '15 days' THEN 1 END) as expired_new
+FROM products 
+WHERE is_active = true
+`);
+
+const stats = statsResult.rows[0];
+
+res.json({
+success: true,
+stats: {
+total: parseInt(stats.total_products),
+current: {
+featured: parseInt(stats.featured_count),
+best_seller: parseInt(stats.best_seller_count),
+new: parseInt(stats.new_count),
+offer: parseInt(stats.offer_count)
+},
+eligible: {
+featured: parseInt(stats.eligible_featured),
+best_seller: parseInt(stats.eligible_best_seller)
+},
+expired: {
+new: parseInt(stats.expired_new)
+}
+}
+});
+
+} catch (error) {
+console.error('Error al obtener estadísticas de badges:', error);
+res.status(500).json({ error: 'Error interno del servidor' });
+} finally {
+if (client) client.release();
+}
+});
+
 export default router;
