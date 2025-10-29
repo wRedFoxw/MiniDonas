@@ -3,6 +3,10 @@ constructor() {
 this.currentProduct = null;
 this.currentBanner = null;
 this.currentNotification = null;
+this.productsLoaded = false;
+this.bannersLoaded = false;
+this.notificationsLoaded = false;
+this.hoursLoaded = false;
 this.notificationSound = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==');
 this.notificationQueue = [];
 this.isShowingNotification = false;
@@ -10,23 +14,74 @@ this.init();
 }
 
 async init() {
-await this.loadProducts();
-await this.loadBanners();
-await this.loadSettings();
-await this.loadNotifications();
-await this.loadNotificationStats();
+try {
+this.showGlobalLoading(true);
+
+await Promise.all([
+this.loadProducts(),
+this.loadBusinessHours(),
+this.loadForcedState()
+]);
+
 this.setupEventListeners();
 this.setupSystemNotifications();
 this.requestNotificationPermission();
+this.setupSSE();
+
+} catch (error) {
+console.error('Error inicializando dashboard:', error);
+this.showNotification('Error', 'Error al inicializar el panel', 'error');
+} finally {
+this.showGlobalLoading(false);
+}
+}
+
+showGlobalLoading(show) {
+let loader = document.getElementById('globalLoader');
+
+if (show) {
+if (!loader) {
+loader = document.createElement('div');
+loader.id = 'globalLoader';
+loader.className = 'global-loader';
+loader.innerHTML = `
+<div class="loader-content">
+<div class="loader-spinner"></div>
+<p>Cargando panel de administración...</p>
+</div>
+`;
+document.body.appendChild(loader);
+}
+loader.style.display = 'flex';
+} else if (loader) {
+loader.style.display = 'none';
+}
 }
 
 async fetchData(endpoint, options = {}) {
 try {
-const response = await fetch(`/api/admin/${endpoint}`, options);
-if (!response.ok) {
-const errorData = await response.json().catch(() => ({ error: 'Error desconocido' }));
-throw new Error(errorData.error || `Error ${response.status}: ${response.statusText}`);
+const baseUrl = '/api/admin';
+const url = endpoint.startsWith('/') ? `${baseUrl}${endpoint}` : `${baseUrl}/${endpoint}`;
+
+const response = await fetch(url, {
+...options,
+headers: {
+'Content-Type': 'application/json',
+...options.headers
 }
+});
+
+if (!response.ok) {
+const errorText = await response.text();
+let errorData;
+try {
+errorData = JSON.parse(errorText);
+} catch {
+errorData = { error: errorText || `Error ${response.status}: ${response.statusText}` };
+}
+throw new Error(errorData.error || `Error ${response.status}`);
+}
+
 return await response.json();
 } catch (error) {
 console.error('Error fetching data:', error);
@@ -55,13 +110,32 @@ this.setLoadingState('bannersList', false);
 }
 }
 
-async loadSettings() {
-const settings = await this.fetchData('settings');
-if (settings) {
-document.getElementById('themeColor').value = settings.theme_color || '#e44d26';
-if (settings.logo_data) {
-document.getElementById('logoPreview').innerHTML = `<img src="${settings.logo_data}" alt="Logo">`;
+async loadBusinessHours() {
+try {
+this.setLoadingState('businessHoursList', true);
+const hours = await this.fetchData('business-hours');
+if (hours) this.renderBusinessHours(hours);
+await this.loadCurrentStatus();
+} finally {
+this.setLoadingState('businessHoursList', false);
 }
+}
+
+async loadForcedState() {
+try {
+const forcedState = await this.fetchData('business-forced-state');
+if (forcedState) this.renderForcedState(forcedState);
+} catch (error) {
+console.error('Error loading forced state:', error);
+}
+}
+
+async loadCurrentStatus() {
+try {
+const status = await this.fetchData('business-status');
+if (status) this.renderCurrentStatus(status);
+} catch (error) {
+console.error('Error loading current status:', error);
 }
 }
 
@@ -70,17 +144,23 @@ try {
 this.setLoadingState('notificationsList', true);
 const notifications = await this.fetchData('notifications');
 if (notifications) this.renderNotifications(notifications);
+} catch (error) {
+console.error('Error loading notifications data:', error);
 } finally {
 this.setLoadingState('notificationsList', false);
 }
 }
 
 async loadNotificationStats() {
+try {
 const stats = await this.fetchData('notifications/stats');
 if (stats) {
 document.getElementById('totalNotifications').textContent = stats.total;
 document.getElementById('sentNotifications').textContent = stats.sent;
 document.getElementById('totalDevices').textContent = stats.devices;
+}
+} catch (error) {
+console.error('Error loading notification stats:', error);
 }
 }
 
@@ -137,6 +217,78 @@ container.appendChild(bannerElement);
 });
 }
 
+renderBusinessHours(hours) {
+const container = document.getElementById('businessHoursList');
+if (!container) return;
+
+container.innerHTML = '';
+
+hours.forEach(hour => {
+const hourElement = this.createBusinessHourElement(hour);
+container.appendChild(hourElement);
+});
+}
+
+renderForcedState(forcedState) {
+document.getElementById('enableForcedState').checked = forcedState.is_forced;
+
+// Actualizar botones de estado forzado
+const openBtn = document.querySelector('[data-value="open"]');
+const closedBtn = document.querySelector('[data-value="closed"]');
+
+if (forcedState.forced_state) {
+openBtn.classList.add('active');
+closedBtn.classList.remove('active');
+} else {
+openBtn.classList.remove('active');
+closedBtn.classList.add('active');
+}
+
+if (forcedState.forced_until) {
+const localDateTime = new Date(forcedState.forced_until).toISOString().slice(0, 16);
+document.getElementById('forcedUntil').value = localDateTime;
+}
+}
+
+renderCurrentStatus(status) {
+const container = document.getElementById('currentStatus');
+if (!container) return;
+
+let statusClass = 'status-closed';
+if (status.is_open) {
+statusClass = status.is_forced ? 'status-forced' : 'status-open';
+}
+
+container.innerHTML = `
+<div class="${statusClass}">
+<div class="status-item">
+<span class="status-label">Estado:</span>
+<span class="status-value">${status.is_open ? '🟢 ABIERTO' : '🔴 CERRADO'}</span>
+${status.is_forced ? ' <small>(Forzado)</small>' : ''}
+</div>
+${status.closing_time ? `
+<div class="status-item">
+<span class="status-label">Cierra a las:</span>
+<span class="status-value">${status.closing_time}</span>
+</div>
+` : ''}
+${status.next_open_time ? `
+<div class="status-item">
+<span class="status-label">Abre a las:</span>
+<span class="status-value">${status.next_open_time}</span>
+</div>
+` : ''}
+${status.next_open_day ? `
+<div class="status-item">
+<span class="status-label">Próxima apertura:</span>
+<span class="status-value">${status.next_open_day.day_name} a las ${status.next_open_day.open_time}</span>
+</div>
+` : ''}
+<div class="status-message">${status.message}</div>
+</div>
+`;
+}
+
 renderNotifications(notifications) {
 const container = document.getElementById('notificationsList');
 if (!container) return;
@@ -158,17 +310,17 @@ createProductElement(product) {
 const div = document.createElement('div');
 div.className = `product-item ${!product.is_active ? 'product-inactive' : ''}`;
 
-const badges = [];
-if (product.is_new) badges.push('Nuevo');
-if (product.is_offer) badges.push('Oferta');
-if (product.is_featured) badges.push('Destacado');
-if (product.is_best_seller) badges.push('Más Vendido');
+const insignias = [];
+if (product.is_new) insignias.push('Nuevo');
+if (product.is_offer) insignias.push('Oferta');
+if (product.is_featured) insignias.push('Destacado');
+if (product.is_best_seller) insignias.push('Más Vendido');
 
 div.innerHTML = `
 <div class="product-info">
 <h4>${this.escapeHtml(product.name)}</h4>
 <p>$${product.price} | <i class="fas fa-thumbs-up"></i> ${product.likes} | <i class="fas fa-thumbs-down"></i> ${product.dislikes}</p>
-<p><small>${badges.join(', ') || 'Sin etiquetas'}</small></p>
+<p><small>${insignias.join(', ') || 'Sin etiquetas'}</small></p>
 <p><small><i class="fas fa-eye"></i> Estado: ${product.is_active ? 'Activo' : 'Inactivo'}</small></p>
 </div>
 <div class="product-actions">
@@ -215,6 +367,66 @@ this.deleteBanner(e.target.closest('.btn-delete').dataset.id);
 return div;
 }
 
+formatTimeTo12h(time24) {
+if (!time24) return '';
+const [hours, minutes] = time24.split(':');
+const hour = parseInt(hours, 10);
+const ampm = hour >= 12 ? 'PM' : 'AM';
+const hour12 = hour % 12 || 12;
+return `${hour12}:${minutes} ${ampm}`;
+}
+
+formatTimeTo24h(time12) {
+if (!time12) return '';
+const [time, ampm] = time12.split(' ');
+let [hours, minutes] = time.split(':');
+let hour = parseInt(hours, 10);
+if (ampm === 'PM' && hour < 12) hour += 12;
+if (ampm === 'AM' && hour === 12) hour = 0;
+return `${hour.toString().padStart(2, '0')}:${minutes}`;
+}
+
+createBusinessHourElement(hour) {
+const div = document.createElement('div');
+div.className = 'business-hour-item';
+
+const openTime12 = hour.open_time ? this.formatTimeTo12h(hour.open_time) : '';
+const closeTime12 = hour.close_time ? this.formatTimeTo12h(hour.close_time) : '';
+
+div.innerHTML = `
+<div class="business-hour-day">
+<strong>${hour.day_name}</strong>
+</div>
+<div class="business-hour-times">
+<div class="time-input-group">
+<label>Apertura:</label>
+<input type="text" class="open-time time-12h-input" value="${openTime12}" placeholder="9:00 AM" ${hour.is_closed ? 'disabled' : ''}>
+</div>
+<div class="time-input-group">
+<label>Cierre:</label>
+<input type="text" class="close-time time-12h-input" value="${closeTime12}" placeholder="6:00 PM" ${hour.is_closed ? 'disabled' : ''}>
+</div>
+</div>
+<div class="business-hour-checkbox">
+<label>
+<input type="checkbox" class="is-closed" ${hour.is_closed ? 'checked' : ''}>
+<span class="checkbox-label">Cerrado este día</span>
+</label>
+</div>
+`;
+
+const openTimeInput = div.querySelector('.open-time');
+const closeTimeInput = div.querySelector('.close-time');
+const isClosedCheckbox = div.querySelector('.is-closed');
+
+isClosedCheckbox.addEventListener('change', () => {
+openTimeInput.disabled = isClosedCheckbox.checked;
+closeTimeInput.disabled = isClosedCheckbox.checked;
+});
+
+return div;
+}
+
 createNotificationElement(notification) {
 const div = document.createElement('div');
 div.className = 'notification-item';
@@ -227,8 +439,8 @@ const typeLabels = {
 'promo': 'Promoción'
 };
 
-const sendDate = new Date(notification.send_at).toLocaleString();
-const createdDate = new Date(notification.created_at).toLocaleString();
+const sendDate = new Date(notification.send_at).toLocaleString('es-CU');
+const createdDate = new Date(notification.created_at).toLocaleString('es-CU');
 
 div.innerHTML = `
 <div class="notification-header">
@@ -241,7 +453,7 @@ div.innerHTML = `
 <span><i class="fas fa-paper-plane"></i> Enviada: ${sendDate}</span>
 </div>
 <div class="notification-meta">
-<span>Estado: ${notification.is_active ? 'Activa' : 'Inactiva'} | ${notification.is_sent ? 'Enviada' : 'Pendiente'}</span>
+<span>Estado: ${notification.is_sent ? 'Enviada' : 'Pendiente'}</span>
 </div>
 <div class="notification-actions">
 <button class="btn-edit" data-id="${notification.id}"><i class="fas fa-edit"></i> Editar</button>
@@ -268,17 +480,111 @@ this.deleteNotification(e.target.closest('.btn-delete').dataset.id);
 return div;
 }
 
+async saveBusinessHours() {
+const hoursItems = document.querySelectorAll('.business-hour-item');
+const hours = [];
+
+hoursItems.forEach(item => {
+const dayName = item.querySelector('.business-hour-day strong').textContent;
+const openTime = item.querySelector('.open-time').value;
+const closeTime = item.querySelector('.close-time').value;
+const isClosed = item.querySelector('.is-closed').checked;
+
+const dayMap = {
+'Domingo': 0, 'Lunes': 1, 'Martes': 2, 'Miércoles': 3,
+'Jueves': 4, 'Viernes': 5, 'Sábado': 6
+};
+
+hours.push({
+day_of_week: dayMap[dayName],
+open_time: openTime ? this.formatTimeTo24h(openTime) : null,
+close_time: closeTime ? this.formatTimeTo24h(closeTime) : null,
+is_closed: isClosed
+});
+});
+
+const saveButton = document.getElementById('saveBusinessHours');
+const originalText = saveButton.innerHTML;
+
+saveButton.innerHTML = '<div class="loading-spinner"></div> Guardando...';
+saveButton.classList.add('btn-loading');
+saveButton.disabled = true;
+
+try {
+const result = await this.fetchData('business-hours', {
+method: 'PUT',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({ hours })
+});
+
+if (result && result.success) {
+this.showNotification('Éxito', 'Horarios guardados correctamente', 'success');
+await this.loadCurrentStatus();
+}
+} catch (error) {
+this.showNotification('Error', error.message || 'Error al guardar horarios', 'error');
+} finally {
+saveButton.innerHTML = originalText;
+saveButton.classList.remove('btn-loading');
+saveButton.disabled = false;
+}
+}
+
+async saveForcedState() {
+const isForced = document.getElementById('enableForcedState').checked;
+const forcedState = document.querySelector('.state-action-btn.active')?.dataset.value === 'open';
+const forcedUntil = document.getElementById('forcedUntil').value;
+
+if (isForced && !forcedUntil) {
+this.showNotification('Error', 'Debes especificar hasta cuándo aplicar el estado forzado', 'error');
+return;
+}
+
+const saveButton = document.getElementById('saveForcedState');
+const originalText = saveButton.innerHTML;
+
+saveButton.innerHTML = '<div class="loading-spinner"></div> Guardando...';
+saveButton.classList.add('btn-loading');
+saveButton.disabled = true;
+
+try {
+const result = await this.fetchData('business-forced-state', {
+method: 'PUT',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({
+is_forced: isForced,
+forced_state: forcedState,
+forced_until: forcedUntil
+})
+});
+
+if (result && result.success) {
+this.showNotification('Éxito', 'Estado forzado guardado correctamente', 'success');
+await this.loadCurrentStatus();
+}
+} catch (error) {
+this.showNotification('Error', error.message || 'Error al guardar estado forzado', 'error');
+} finally {
+saveButton.innerHTML = originalText;
+saveButton.classList.remove('btn-loading');
+saveButton.disabled = false;
+}
+}
+
 setupEventListeners() {
+// Navegación entre pestañas
 document.querySelectorAll('.nav-btn').forEach(btn => {
 btn.addEventListener('click', (e) => {
 document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
 document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-
 e.target.classList.add('active');
-document.getElementById(`${e.target.dataset.tab}-tab`).classList.add('active');
+const tabId = `${e.target.dataset.tab}-tab`;
+document.getElementById(tabId).classList.add('active');
+this.loadTabData(e.target.dataset.tab);
 });
 });
 
+// Productos
 document.getElementById('addProductBtn').addEventListener('click', () => {
 this.openProductModal();
 });
@@ -288,6 +594,7 @@ e.preventDefault();
 this.saveProduct();
 });
 
+// Banners
 document.getElementById('addBannerBtn').addEventListener('click', () => {
 this.openBannerModal();
 });
@@ -297,6 +604,7 @@ e.preventDefault();
 this.saveBanner();
 });
 
+// Notificaciones
 document.getElementById('addNotificationBtn').addEventListener('click', () => {
 this.openNotificationModal();
 });
@@ -310,21 +618,52 @@ document.getElementById('sendNotificationBtn').addEventListener('click', () => {
 this.sendCurrentNotification();
 });
 
-document.getElementById('settingsForm').addEventListener('submit', (e) => {
-e.preventDefault();
-this.saveSettings();
+// Opciones de envío de notificaciones
+document.querySelectorAll('.send-option-btn').forEach(btn => {
+btn.addEventListener('click', (e) => {
+document.querySelectorAll('.send-option-btn').forEach(b => b.classList.remove('active'));
+e.target.classList.add('active');
+
+const sendType = e.target.dataset.type;
+const scheduleFields = document.getElementById('scheduleFields');
+
+if (sendType === 'schedule') {
+scheduleFields.style.display = 'block';
+} else {
+scheduleFields.style.display = 'none';
+}
+});
 });
 
-document.getElementById('productImageUpload').addEventListener('change', (e) => {
-this.previewImageAsBase64(e.target, 'productImagePreview', 'productImageData');
+// Botones de estado forzado
+document.querySelectorAll('.state-action-btn').forEach(btn => {
+btn.addEventListener('click', (e) => {
+document.querySelectorAll('.state-action-btn').forEach(b => b.classList.remove('active'));
+e.target.classList.add('active');
+});
 });
 
-document.getElementById('bannerImageUpload').addEventListener('change', (e) => {
-this.previewImageAsBase64(e.target, 'bannerImagePreview', 'bannerImageData');
+// Horarios
+document.getElementById('saveBusinessHours').addEventListener('click', () => {
+this.saveBusinessHours();
 });
 
-document.getElementById('logoUpload').addEventListener('change', (e) => {
-this.previewImageAsBase64(e.target, 'logoPreview', 'logoData');
+document.getElementById('saveForcedState').addEventListener('click', () => {
+this.saveForcedState();
+});
+
+// insignias
+document.getElementById('updateinsigniasBtn').addEventListener('click', (e) => {
+this.updateinsignias();
+});
+
+document.getElementById('showinsigniasStatsBtn').addEventListener('click', () => {
+this.showinsigniasStats();
+});
+
+// Modales
+document.querySelector('#statsModal .close').addEventListener('click', () => {
+document.getElementById('statsModal').style.display = 'none';
 });
 
 document.querySelectorAll('.close').forEach(closeBtn => {
@@ -343,7 +682,52 @@ modal.style.display = 'none';
 });
 });
 
+// Upload de imágenes
+document.getElementById('productImageUpload').addEventListener('change', (e) => {
+this.previewImageAsBase64(e.target, 'productImagePreview', 'productImageData');
+});
+
+document.getElementById('bannerImageUpload').addEventListener('change', (e) => {
+this.previewImageAsBase64(e.target, 'bannerImagePreview', 'bannerImageData');
+});
+
 this.setupSSE();
+}
+
+async loadTabData(tab) {
+try {
+switch (tab) {
+case 'products':
+if (!this.productsLoaded) {
+await this.loadProducts();
+this.productsLoaded = true;
+}
+break;
+case 'banners':
+if (!this.bannersLoaded) {
+await this.loadBanners();
+this.bannersLoaded = true;
+}
+break;
+case 'notifications':
+if (!this.notificationsLoaded) {
+await this.loadNotifications();
+await this.loadNotificationStats();
+this.notificationsLoaded = true;
+}
+break;
+case 'hours':
+if (!this.hoursLoaded) {
+await this.loadBusinessHours();
+await this.loadForcedState();
+this.hoursLoaded = true;
+}
+break;
+}
+} catch (error) {
+console.error(`Error loading ${tab} data:`, error);
+this.showNotification('Error', `Error al cargar ${tab}`, 'error');
+}
 }
 
 setupSystemNotifications() {
@@ -550,6 +934,9 @@ break;
 case 'banners_updated':
 this.handleBannersUpdate(data.data);
 break;
+case 'business_status_updated':
+this.handleBusinessStatusUpdate(data.data);
+break;
 case 'connected':
 console.log('Cliente conectado SSE:', data.data.clientId);
 break;
@@ -559,13 +946,18 @@ console.log('Mensaje SSE no manejado:', data);
 }
 
 handleProductsUpdate(payload) {
-this.showNotification('Productos actualizados', 'La lista de productos ha sido actualizada', 'info', 3000);
+this.showNotification('Productos actualizados', 'La lista de productos ha sido actualizada', 'info', 5000);
 this.loadProducts();
 }
 
 handleBannersUpdate(payload) {
-this.showNotification('Banners actualizados', 'La lista de banners ha sido actualizada', 'info', 3000);
+this.showNotification('Banners actualizados', 'La lista de banners ha sido actualizada', 'info', 5000);
 this.loadBanners();
+}
+
+handleBusinessStatusUpdate(payload) {
+this.showNotification('Estado actualizado', 'El estado del negocio ha sido actualizado', 'info', 5000);
+this.loadCurrentStatus();
 }
 
 handleNewNotification(payload) {
@@ -620,7 +1012,7 @@ if (Notification.permission === "default") {
 try {
 const permission = await Notification.requestPermission();
 if (permission === "granted") {
-this.showNotification('Notificaciones activadas', 'Ahora recibirás notificaciones push', 'success', 3000);
+this.showNotification('Notificaciones activadas', 'Ahora recibirás notificaciones push', 'success', 5000);
 }
 } catch (error) {
 console.error('Error solicitando permiso de notificaciones:', error);
@@ -667,12 +1059,15 @@ dataField.id = dataFieldId;
 input.parentNode.appendChild(dataField);
 }
 dataField.value = e.target.result;
+
+input.removeAttribute('required');
 };
 reader.readAsDataURL(file);
 } else {
 preview.innerHTML = '';
 const dataField = document.getElementById(dataFieldId);
 if (dataField) dataField.value = '';
+input.setAttribute('required', 'true');
 }
 }
 
@@ -693,7 +1088,7 @@ document.getElementById('productOffer').checked = Boolean(product.is_offer);
 document.getElementById('productFeatured').checked = Boolean(product.is_featured);
 document.getElementById('productBestSeller').checked = Boolean(product.is_best_seller);
 
-document.getElementById('productImagePreview').innerHTML = product.image_data ? 
+document.getElementById('productImagePreview').innerHTML = product.image_data ?
 `<img src="${product.image_data}" alt="Preview">` : '';
 
 let dataField = document.getElementById('productImageData');
@@ -705,12 +1100,12 @@ document.getElementById('productImageUpload').parentNode.appendChild(dataField);
 }
 dataField.value = product.image_data || '';
 
-document.getElementById('productImageUpload').required = false;
+document.getElementById('productImageUpload').removeAttribute('required');
 } else {
 title.innerHTML = '<i class="fas fa-plus"></i> Agregar Producto';
 document.getElementById('productForm').reset();
 document.getElementById('productImagePreview').innerHTML = '';
-document.getElementById('productImageUpload').required = true;
+document.getElementById('productImageUpload').setAttribute('required', 'true');
 
 const dataField = document.getElementById('productImageData');
 if (dataField) dataField.value = '';
@@ -731,7 +1126,7 @@ document.getElementById('bannerTitle').value = banner.title || '';
 document.getElementById('bannerSubtitle').value = banner.subtitle || '';
 document.getElementById('bannerActive').checked = Boolean(banner.is_active);
 
-document.getElementById('bannerImagePreview').innerHTML = banner.image_data ? 
+document.getElementById('bannerImagePreview').innerHTML = banner.image_data ?
 `<img src="${banner.image_data}" alt="Preview">` : '';
 
 let dataField = document.getElementById('bannerImageData');
@@ -743,12 +1138,12 @@ document.getElementById('bannerImageUpload').parentNode.appendChild(dataField);
 }
 dataField.value = banner.image_data || '';
 
-document.getElementById('bannerImageUpload').required = false;
+document.getElementById('bannerImageUpload').removeAttribute('required');
 } else {
 title.innerHTML = '<i class="fas fa-plus"></i> Agregar Banner';
 document.getElementById('bannerForm').reset();
 document.getElementById('bannerImagePreview').innerHTML = '';
-document.getElementById('bannerImageUpload').required = true;
+document.getElementById('bannerImageUpload').setAttribute('required', 'true');
 
 const dataField = document.getElementById('bannerImageData');
 if (dataField) dataField.value = '';
@@ -762,9 +1157,18 @@ this.currentNotification = notification;
 const modal = document.getElementById('notificationModal');
 const title = document.getElementById('notificationModalTitle');
 
+// Configurar opciones de envío por defecto
+document.querySelectorAll('.send-option-btn').forEach(btn => btn.classList.remove('active'));
+document.querySelector('.send-option-btn[data-type="immediately"]').classList.add('active');
+document.getElementById('scheduleFields').style.display = 'none';
+
+// Establecer fecha y hora mínima como ahora
 const now = new Date();
-const localDateTime = now.toISOString().slice(0, 16);
-document.getElementById('notificationSendAt').min = localDateTime;
+const today = now.toISOString().split('T')[0];
+const currentTime12h = this.formatTimeTo12h(now.toTimeString().slice(0,5));
+
+document.getElementById('notificationSendDate').value = today;
+document.getElementById('notificationSendTime').value = currentTime12h;
 
 if (notification) {
 title.innerHTML = '<i class="fas fa-edit"></i> Editar Notificación';
@@ -772,21 +1176,34 @@ document.getElementById('notificationId').value = notification.id;
 document.getElementById('notificationTitle').value = notification.title;
 document.getElementById('notificationMessage').value = notification.message;
 document.getElementById('notificationType').value = notification.type;
-document.getElementById('notificationActive').checked = Boolean(notification.is_active);
-document.getElementById('notificationSendNow').checked = false;
 
 const sendDate = new Date(notification.send_at);
-const formattedDate = sendDate.toISOString().slice(0, 16);
-document.getElementById('notificationSendAt').value = formattedDate;
+const formattedDate = sendDate.toISOString().split('T')[0];
+const formattedTime = this.formatTimeTo12h(sendDate.toTimeString().slice(0,5));
 
+document.getElementById('notificationSendDate').value = formattedDate;
+document.getElementById('notificationSendTime').value = formattedTime;
+
+// Configurar tipo de envío basado en la fecha programada
+const now = new Date();
+if (sendDate <= now) {
+document.querySelector('.send-option-btn[data-type="immediately"]').classList.add('active');
+document.querySelector('.send-option-btn[data-type="schedule"]').classList.remove('active');
+document.getElementById('scheduleFields').style.display = 'none';
+} else {
+document.querySelector('.send-option-btn[data-type="schedule"]').classList.add('active');
+document.querySelector('.send-option-btn[data-type="immediately"]').classList.remove('active');
+document.getElementById('scheduleFields').style.display = 'block';
+}
+
+// Mostrar u ocultar botón "Enviar Ahora" según estado
 document.getElementById('sendNotificationBtn').style.display = notification.is_sent ? 'none' : 'block';
 } else {
 title.innerHTML = '<i class="fas fa-plus"></i> Nueva Notificación';
 document.getElementById('notificationForm').reset();
-document.getElementById('notificationSendAt').value = localDateTime;
-document.getElementById('notificationActive').checked = true;
-document.getElementById('notificationSendNow').checked = false;
+document.getElementById('notificationType').value = 'info';
 document.getElementById('sendNotificationBtn').style.display = 'block';
+document.getElementById('notificationId').value = '';
 }
 
 modal.style.display = 'block';
@@ -821,11 +1238,21 @@ return;
 const productId = document.getElementById('productId').value;
 let result;
 
-const submitButton = document.querySelector('#productForm button[type="submit"]');
-const originalText = submitButton.innerHTML;
+let submitButton = document.querySelector('#productForm button[type="submit"]');
+if (!submitButton) {
+submitButton = document.querySelector('#productForm .btn-primary');
+}
+if (!submitButton) {
+submitButton = document.querySelector('.modal-footer .btn-primary');
+}
+
+let originalText = '';
+if (submitButton) {
+originalText = submitButton.innerHTML;
 submitButton.innerHTML = '<div class="loading-spinner"></div> Guardando...';
 submitButton.classList.add('btn-loading');
 submitButton.disabled = true;
+}
 
 try {
 if (productId) {
@@ -850,9 +1277,11 @@ await this.loadProducts();
 } catch (error) {
 this.showNotification('Error', error.message || 'Error al guardar el producto', 'error');
 } finally {
+if (submitButton) {
 submitButton.innerHTML = originalText;
 submitButton.classList.remove('btn-loading');
 submitButton.disabled = false;
+}
 }
 }
 
@@ -911,31 +1340,51 @@ submitButton.disabled = false;
 }
 
 async saveNotification() {
+const sendType = document.querySelector('.send-option-btn.active').dataset.type;
+
+let sendAt;
+if (sendType === 'immediately') {
+sendAt = new Date().toISOString();
+} else {
+const sendDate = document.getElementById('notificationSendDate').value;
+const sendTime = document.getElementById('notificationSendTime').value;
+
+if (!sendDate || !sendTime) {
+this.showNotification('Error', 'Debes especificar fecha y hora para el envío programado', 'error');
+return false;
+}
+
+// Convertir hora 12H a 24H
+const time24h = this.formatTimeTo24h(sendTime);
+const dateTimeString = `${sendDate}T${time24h}:00`;
+sendAt = new Date(dateTimeString).toISOString();
+}
+
 const formData = {
 title: document.getElementById('notificationTitle').value,
 message: document.getElementById('notificationMessage').value,
 type: document.getElementById('notificationType').value,
-is_active: document.getElementById('notificationActive').checked,
-send_at: document.getElementById('notificationSendAt').value
+is_active: true,
+send_at: sendAt
 };
 
 if (!formData.title || !formData.message) {
 this.showNotification('Error', 'Título y mensaje son campos requeridos', 'error');
-return;
-}
-
-if (document.getElementById('notificationSendNow').checked) {
-formData.send_at = new Date().toISOString();
+return false;
 }
 
 const notificationId = document.getElementById('notificationId').value;
 let result;
 
 const submitButton = document.querySelector('#notificationForm button[type="submit"]');
-const originalText = submitButton.innerHTML;
+let originalText = '';
+
+if (submitButton) {
+originalText = submitButton.innerHTML;
 submitButton.innerHTML = '<div class="loading-spinner"></div> Guardando...';
 submitButton.classList.add('btn-loading');
 submitButton.disabled = true;
+}
 
 try {
 if (notificationId) {
@@ -953,52 +1402,24 @@ body: JSON.stringify(formData)
 }
 
 if (result) {
-document.getElementById('notificationModal').style.display = 'none';
+if (!notificationId && result.id) {
+document.getElementById('notificationId').value = result.id;
+}
 this.showNotification('Éxito', `Notificación ${notificationId ? 'actualizada' : 'creada'} correctamente`, 'success');
 await this.loadNotifications();
 await this.loadNotificationStats();
+return true;
 }
+return false;
 } catch (error) {
 this.showNotification('Error', error.message || 'Error al guardar la notificación', 'error');
+return false;
 } finally {
+if (submitButton) {
 submitButton.innerHTML = originalText;
 submitButton.classList.remove('btn-loading');
 submitButton.disabled = false;
 }
-}
-
-async saveSettings() {
-const logoDataField = document.getElementById('logoData');
-const logoData = logoDataField ? logoDataField.value : '';
-
-const formData = {
-theme_color: document.getElementById('themeColor').value,
-logo_data: logoData
-};
-
-const submitButton = document.querySelector('#settingsForm button[type="submit"]');
-const originalText = submitButton.innerHTML;
-submitButton.innerHTML = '<div class="loading-spinner"></div> Guardando...';
-submitButton.classList.add('btn-loading');
-submitButton.disabled = true;
-
-try {
-const result = await this.fetchData('settings', {
-method: 'PUT',
-headers: { 'Content-Type': 'application/json' },
-body: JSON.stringify(formData)
-});
-
-if (result) {
-this.showNotification('Éxito', 'Configuración guardada correctamente', 'success');
-await this.loadSettings();
-}
-} catch (error) {
-this.showNotification('Error', error.message || 'Error al guardar la configuración', 'error');
-} finally {
-submitButton.innerHTML = originalText;
-submitButton.classList.remove('btn-loading');
-submitButton.disabled = false;
 }
 }
 
@@ -1030,34 +1451,55 @@ this.showNotification('Error', error.message || 'Error al enviar la notificació
 }
 
 async sendCurrentNotification() {
+const saved = await this.saveNotification();
+if (!saved) {
+return;
+}
 const notificationId = document.getElementById('notificationId').value;
 if (notificationId) {
 await this.sendNotification(notificationId);
 document.getElementById('notificationModal').style.display = 'none';
+} else {
+this.showNotification('Error', 'No se pudo obtener el ID de la notificación', 'error');
 }
 }
 
 async editProduct(id) {
+try {
 const products = await this.fetchData('products');
 const product = products.find(p => p.id == id);
 if (product) {
 this.openProductModal(product);
 }
+} catch (error) {
+console.error('Error editing product:', error);
+this.showNotification('Error', 'Error al cargar el producto', 'error');
+}
 }
 
 async editBanner(id) {
+try {
 const banners = await this.fetchData('banners');
 const banner = banners.find(b => b.id == id);
 if (banner) {
 this.openBannerModal(banner);
 }
+} catch (error) {
+console.error('Error editing banner:', error);
+this.showNotification('Error', 'Error al cargar el banner', 'error');
+}
 }
 
 async editNotification(id) {
+try {
 const notifications = await this.fetchData('notifications');
 const notification = notifications.find(n => n.id == id);
 if (notification) {
 this.openNotificationModal(notification);
+}
+} catch (error) {
+console.error('Error editing notification:', error);
+this.showNotification('Error', 'Error al cargar la notificación', 'error');
 }
 }
 
@@ -1125,6 +1567,143 @@ await this.loadNotificationStats();
 }
 } catch (error) {
 this.showNotification('Error', error.message || 'Error al eliminar la notificación', 'error');
+}
+}
+
+async updateinsignias() {
+const confirmed = await this.showConfirmation(
+'Actualizar insignias',
+'¿Estás seguro de que quieres actualizar automáticamente todas las etiquetas de productos?\n\n' +
+'Esta acción aplicará las reglas:\n' +
+'• 50+ likes → Destacado\n' +
+'• 100+ likes → Más Vendido\n' +
+'• 15 días → Quitar "Nuevo"\n\n' +
+'¿Continuar?'
+);
+
+if (!confirmed) return;
+
+const updateButton = document.querySelector('#updateinsigniasBtn');
+const originalText = updateButton.innerHTML;
+
+if (updateButton) {
+updateButton.innerHTML = '<div class="loading-spinner"></div> Actualizando...';
+updateButton.classList.add('btn-loading');
+updateButton.disabled = true;
+}
+
+try {
+const result = await this.fetchData('products/update-insignias', {
+method: 'POST'
+});
+
+if (result && result.success) {
+this.showNotification(
+'Insignias Actualizados',
+`Se actualizaron ${result.updatedProducts} productos.\n` +
+`Destacados: ${result.stats.featured}\n` +
+`Más Vendidos: ${result.stats.best_seller}\n` +
+`Nuevos: ${result.stats.new}`,
+'success'
+);
+
+await this.loadProducts();
+await this.showinsigniasStats();
+}
+} catch (error) {
+this.showNotification('Error', error.message || 'Error al actualizar insignias', 'error');
+} finally {
+if (updateButton) {
+updateButton.innerHTML = originalText;
+updateButton.classList.remove('btn-loading');
+updateButton.disabled = false;
+}
+}
+}
+
+async showinsigniasStats() {
+try {
+const modal = document.getElementById('statsModal');
+const statsContent = document.getElementById('statsContent');
+
+statsContent.innerHTML = '<div class="loading-spinner" style="margin: 2rem auto;"></div>';
+modal.style.display = 'block';
+
+const result = await this.fetchData('products/insignias-stats');
+
+if (result && result.success) {
+const stats = result.stats;
+
+statsContent.innerHTML = `
+<div class="stats-grid">
+<div class="stat-card">
+<i class="fas fa-box" style="color: #3498db;"></i>
+<span class="stat-value">${stats.total}</span>
+<span class="stat-label">Productos Totales</span>
+</div>
+<div class="stat-card">
+<i class="fas fa-star" style="color: #2ecc71;"></i>
+<span class="stat-value">${stats.current.new}</span>
+<span class="stat-label">Productos Nuevos</span>
+</div>
+<div class="stat-card">
+<i class="fas fa-award" style="color: #e74c3c;"></i>
+<span class="stat-value">${stats.current.featured}</span>
+<span class="stat-label">Destacados</span>
+</div>
+<div class="stat-card">
+<i class="fas fa-fire" style="color: #3498db;"></i>
+<span class="stat-value">${stats.current.best_seller}</span>
+<span class="stat-label">Más Vendidos</span>
+</div>
+</div>
+
+<div class="stats-section">
+<h4><i class="fas fa-bullseye"></i> Puntuación de Productos</h4>
+<div class="stats-grid">
+<div class="stat-card">
+<i class="fas fa-trophy" style="color: #f39c12;"></i>
+<span class="stat-value">${stats.eligible.featured}</span>
+<span class="stat-label">Destacado (50+ likes)</span>
+</div>
+<div class="stat-card">
+<i class="fas fa-crown" style="color: #9b59b6;"></i>
+<span class="stat-value">${stats.eligible.best_seller}</span>
+<span class="stat-label">Más Vendido (100+ likes)</span>
+</div>
+</div>
+</div>
+
+<div class="stats-section">
+<h4><i class="fas fa-clock"></i> Estado de Productos</h4>
+<div class="stats-grid">
+<div class="stat-card">
+<i class="fas fa-hourglass-end" style="color: #e74c3c;"></i>
+<span class="stat-value">${stats.expired.new}</span>
+<span class="stat-label">Nuevos Expirados</span>
+</div>
+<div class="stat-card">
+<i class="fas fa-percentage" style="color: #f39c12;"></i>
+<span class="stat-value">${stats.current.offer}</span>
+<span class="stat-label">Ofertas Activas</span>
+</div>
+</div>
+</div>
+
+${stats.expired.new > 0 ? `
+<div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 8px; padding: 1rem; margin-top: 1rem;">
+<i class="fas fa-exclamation-triangle" style="color: #f39c12;"></i>
+<strong>Acción Recomendada:</strong> ${stats.expired.new} productos han excedido los 15 días y deberían perder la etiqueta "Nuevo".
+</div>
+` : ''}
+`;
+} else {
+statsContent.innerHTML = '<p class="no-data">Error al cargar las estadísticas</p>';
+}
+} catch (error) {
+console.error('Error al obtener estadísticas:', error);
+const statsContent = document.getElementById('statsContent');
+statsContent.innerHTML = '<p class="no-data">Error al cargar las estadísticas</p>';
 }
 }
 }

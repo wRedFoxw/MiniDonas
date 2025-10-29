@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Dashboard Admin</title>
 <link rel="stylesheet" href="admin.css">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link rel="stylesheet" href="../client/all.min.css">
 </head>
 <body>
 <div class="dashboard">
@@ -18,14 +18,24 @@
 <button class="nav-btn active" data-tab="products"><i class="fas fa-box"></i> Productos</button>
 <button class="nav-btn" data-tab="banners"><i class="fas fa-image"></i> Banners</button>
 <button class="nav-btn" data-tab="notifications"><i class="fas fa-bell"></i> Notificaciones</button>
-<button class="nav-btn" data-tab="settings"><i class="fas fa-cog"></i> Configuración</button>
+<button class="nav-btn" data-tab="hours"><i class="fas fa-clock"></i> Horarios</button>
 </nav>
 
 <main class="dashboard-main">
 <section id="products-tab" class="tab-content active">
 <div class="section-header">
 <h2><i class="fas fa-box"></i> Gestión de Productos</h2>
-<button id="addProductBtn" class="btn-primary"><i class="fas fa-plus"></i> Agregar Producto</button>
+<div class="header-actions">
+<button id="updateinsigniasBtn" class="btn-secondary" title="Actualizar etiquetas de productos">
+<i class="fas fa-sync-alt"></i> Actualizar Etiquetas
+</button>
+<button id="showinsigniasStatsBtn" class="btn-info" title="Ver estadísticas">
+<i class="fas fa-chart-bar"></i> Estadísticas
+</button>
+<button id="addProductBtn" class="btn-primary">
+<i class="fas fa-plus"></i> Agregar Producto
+</button>
+</div>
 </div>
 <div class="products-list" id="productsList"></div>
 </section>
@@ -63,31 +73,60 @@
 <div class="notifications-list" id="notificationsList"></div>
 </section>
 
-<section id="settings-tab" class="tab-content">
+<section id="hours-tab" class="tab-content">
 <div class="section-header">
-<h2><i class="fas fa-cog"></i> Configuración General</h2>
+<h2><i class="fas fa-clock"></i> Gestión de Horarios</h2>
 </div>
-<form id="settingsForm" class="settings-form">
+<div class="section-header">
+<h3><i class="fas fa-store"></i> Horarios Regulares</h3>
+<button id="saveBusinessHours" class="btn-primary"><i class="fas fa-save"></i> Guardar Horarios</button>
+</div>
+<div id="businessHoursList" class="business-hours-list"></div>
+
+<div class="section-header">
+<h3><i class="fas fa-cog"></i> Estado Forzado</h3>
+</div>
+<div class="forced-state-form">
 <div class="form-group">
-<label for="logoUpload"><i class="fas fa-upload"></i> Logo de la App:</label>
-<input type="file" id="logoUpload" accept="image/*">
-<div id="logoPreview" class="image-preview"></div>
-<input type="hidden" id="logoData">
+<label><input type="checkbox" id="enableForcedState"> <i class="fas fa-power-off"></i> Activar estado forzado</label>
 </div>
 <div class="form-group">
-<label for="themeColor"><i class="fas fa-palette"></i> Color del Tema:</label>
-<input type="color" id="themeColor" name="theme_color" value="#e44d26">
+<label>Estado forzado:</label>
+<div class="forced-state-actions">
+<button type="button" class="state-action-btn" data-value="open">
+<i class="fas fa-door-open"></i>
+Forzar Apertura
+</button>
+<button type="button" class="state-action-btn" data-value="closed">
+<i class="fas fa-door-closed"></i>
+Forzar Cierre
+</button>
 </div>
-<button type="submit" class="btn-primary"><i class="fas fa-save"></i> Guardar Configuración</button>
-</form>
+</div>
+<div class="form-group">
+<label for="forcedUntil"><i class="fas fa-calendar-alt"></i> Hasta:</label>
+<input type="datetime-local" id="forcedUntil">
+</div>
+<button id="saveForcedState" class="btn-primary"><i class="fas fa-save"></i> Guardar Estado</button>
+</div>
+
+<div class="section-header">
+<h3><i class="fas fa-info-circle"></i> Estado Actual</h3>
+</div>
+<div id="currentStatus" class="current-status">
+<div class="status-loading">Cargando estado actual...</div>
+</div>
 </section>
 </main>
 </div>
 
 <div id="productModal" class="modal">
 <div class="modal-content">
-<span class="close">&times;</span>
+<div class="modal-header">
 <h3 id="productModalTitle"><i class="fas fa-box"></i> Agregar Producto</h3>
+<button class="close">&times;</button>
+</div>
+<div class="modal-body">
 <form id="productForm">
 <input type="hidden" id="productId">
 <div class="form-group">
@@ -115,15 +154,23 @@
 <label><input type="checkbox" id="productFeatured"> <i class="fas fa-award"></i> Destacado</label>
 <label><input type="checkbox" id="productBestSeller"> <i class="fas fa-fire"></i> Más Vendido</label>
 </div>
-<button type="submit" class="btn-primary"><i class="fas fa-save"></i> Guardar Producto</button>
 </form>
+</div>
+<div class="modal-footer">
+<button type="submit" form="productForm" class="btn-primary">
+<i class="fas fa-save"></i> Guardar Producto
+</button>
+</div>
 </div>
 </div>
 
 <div id="bannerModal" class="modal">
 <div class="modal-content">
-<span class="close">&times;</span>
+<div class="modal-header">
 <h3 id="bannerModalTitle"><i class="fas fa-image"></i> Agregar Banner</h3>
+<button class="close">&times;</button>
+</div>
+<div class="modal-body">
 <form id="bannerForm">
 <input type="hidden" id="bannerId">
 <div class="form-group">
@@ -143,16 +190,22 @@
 <div class="form-group">
 <label><input type="checkbox" id="bannerActive"> <i class="fas fa-eye"></i> Activo</label>
 </div>
-<button type="submit" class="btn-primary"><i class="fas fa-save"></i> Guardar Banner</button>
 </form>
+</div>
+<div class="modal-footer">
+<button type="submit" form="bannerForm" class="btn-primary"><i class="fas fa-save"></i> Guardar Banner</button>
+</div>
 </div>
 </div>
 
 <div id="notificationModal" class="modal">
 <div class="modal-content">
-<span class="close">&times;</span>
+<div class="modal-header">
 <h3 id="notificationModalTitle"><i class="fas fa-bell"></i> Nueva Notificación</h3>
+<button class="close">&times;</button>
+</div>
 <form id="notificationForm">
+<div class="modal-body">
 <input type="hidden" id="notificationId">
 <div class="form-group">
 <label for="notificationTitle"><i class="fas fa-heading"></i> Título:</label>
@@ -172,19 +225,55 @@
 <option value="promo">Promoción</option>
 </select>
 </div>
+
 <div class="form-group">
-<label for="notificationSendAt"><i class="fas fa-clock"></i> Programar envío:</label>
-<input type="datetime-local" id="notificationSendAt">
+<label><i class="fas fa-paper-plane"></i> Opciones de envío:</label>
+<div class="send-options">
+<button type="button" class="send-option-btn active" data-type="immediately">
+<i class="fas fa-bolt"></i> Enviar Inmediatamente
+</button>
+<button type="button" class="send-option-btn" data-type="schedule">
+<i class="fas fa-clock"></i> Programar Envío
+</button>
 </div>
-<div class="form-group checkbox-group">
-<label><input type="checkbox" id="notificationActive" checked> <i class="fas fa-eye"></i> Activa</label>
-<label><input type="checkbox" id="notificationSendNow"> <i class="fas fa-paper-plane"></i> Enviar inmediatamente</label>
 </div>
+
+<div id="scheduleFields" style="display: none;">
+<div class="form-group">
+<label for="notificationSendDate"><i class="fas fa-calendar"></i> Fecha:</label>
+<input type="date" id="notificationSendDate">
+</div>
+<div class="form-group">
+<label for="notificationSendTime"><i class="fas fa-clock"></i> Hora (12H formato):</label>
+<input type="text" id="notificationSendTime" class="time-12h-input" placeholder="9:00 AM" pattern="[0-9]{1,2}:[0-9]{2} [AP]M">
+<small style="display: block; margin-top: 0.25rem; color: var(--text); opacity: 0.7;">Formato: HH:MM AM/PM (ej: 9:00 AM, 6:30 PM)</small>
+</div>
+</div>
+</div>
+<div class="modal-footer">
 <div class="form-actions">
 <button type="submit" class="btn-primary"><i class="fas fa-save"></i> Guardar Notificación</button>
 <button type="button" id="sendNotificationBtn" class="btn-success"><i class="fas fa-paper-plane"></i> Enviar Ahora</button>
 </div>
+</div>
 </form>
+</div>
+</div>
+
+<div id="statsModal" class="modal">
+<div class="modal-content">
+<div class="modal-header">
+<h3><i class="fas fa-chart-bar"></i> Estadísticas de Productos</h3>
+<button class="close">&times;</button>
+</div>
+<div class="modal-body">
+<div id="statsContent">
+<div class="loading-spinner"></div>
+</div>
+</div>
+<div class="modal-footer">
+<button class="btn-secondary" onclick="document.getElementById('statsModal').style.display='none'">Cerrar</button>
+</div>
 </div>
 </div>
 
