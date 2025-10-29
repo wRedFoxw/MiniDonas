@@ -10,6 +10,7 @@ this.hoursLoaded = false;
 this.notificationSound = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==');
 this.notificationQueue = [];
 this.isShowingNotification = false;
+this.notificationTimeouts = new Map();
 this.init();
 }
 
@@ -35,6 +36,7 @@ this.showNotification('Error', 'Error al inicializar el panel', 'error');
 this.showGlobalLoading(false);
 }
 }
+
 
 showGlobalLoading(show) {
 let loader = document.getElementById('globalLoader');
@@ -652,7 +654,7 @@ document.getElementById('saveForcedState').addEventListener('click', () => {
 this.saveForcedState();
 });
 
-// insignias
+// Insignias
 document.getElementById('updateinsigniasBtn').addEventListener('click', (e) => {
 this.updateinsignias();
 });
@@ -661,21 +663,20 @@ document.getElementById('showinsigniasStatsBtn').addEventListener('click', () =>
 this.showinsigniasStats();
 });
 
-// Modales
-document.querySelector('#statsModal .close').addEventListener('click', () => {
-document.getElementById('statsModal').style.display = 'none';
-});
-
+// Cierre de modales
 document.querySelectorAll('.close').forEach(closeBtn => {
-closeBtn.addEventListener('click', () => {
-document.querySelectorAll('.modal').forEach(modal => {
+closeBtn.addEventListener('click', (e) => {
+e.stopPropagation();
+const modal = e.target.closest('.modal');
+if (modal) {
 modal.style.display = 'none';
-});
+}
 });
 });
 
-window.addEventListener('click', (e) => {
+// Cerrar modal al hacer clic fuera
 document.querySelectorAll('.modal').forEach(modal => {
+modal.addEventListener('click', (e) => {
 if (e.target === modal) {
 modal.style.display = 'none';
 }
@@ -689,6 +690,11 @@ this.previewImageAsBase64(e.target, 'productImagePreview', 'productImageData');
 
 document.getElementById('bannerImageUpload').addEventListener('change', (e) => {
 this.previewImageAsBase64(e.target, 'bannerImagePreview', 'bannerImageData');
+});
+
+// Cerrar estadísticas
+document.querySelector('#statsModal .close').addEventListener('click', () => {
+document.getElementById('statsModal').style.display = 'none';
 });
 
 this.setupSSE();
@@ -784,26 +790,78 @@ notificationElement.innerHTML = `
 
 notificationContainer.appendChild(notificationElement);
 
-setTimeout(() => {
+requestAnimationFrame(() => {
+requestAnimationFrame(() => {
 notificationElement.classList.add('show');
-}, 100);
+});
+});
 
-setTimeout(() => {
+let progressTimeout;
+let isPaused = false;
+let remainingTime = notification.duration;
+
+const startProgress = () => {
+if (progressTimeout) {
+clearTimeout(progressTimeout);
+}
+
 const progressFill = notificationElement.querySelector('.progress-bar-fill');
 if (progressFill) {
 progressFill.style.width = '0%';
+progressFill.style.transition = `width ${remainingTime}ms linear`;
 }
-}, 100);
 
-notificationElement.querySelector('.notification-close').addEventListener('click', () => {
+progressTimeout = setTimeout(() => {
+if (!isPaused) {
 this.removeNotification(notificationElement);
+}
+}, remainingTime);
+};
+
+const pauseProgress = () => {
+isPaused = true;
+if (progressTimeout) {
+clearTimeout(progressTimeout);
+}
+
+const progressFill = notificationElement.querySelector('.progress-bar-fill');
+if (progressFill) {
+const computedStyle = window.getComputedStyle(progressFill);
+const currentWidth = parseFloat(computedStyle.width);
+const progress = (currentWidth / 100) * remainingTime;
+remainingTime = progress;
+
+progressFill.style.transition = 'none';
+progressFill.style.width = `${currentWidth}%`;
+}
+};
+
+const resumeProgress = () => {
+if (!isPaused) return;
+
+isPaused = false;
+startProgress();
+};
+
+notificationElement.addEventListener('mouseenter', pauseProgress);
+notificationElement.addEventListener('mouseleave', resumeProgress);
+
+startProgress();
+
+this.notificationTimeouts.set(notificationElement, {
+timeout: progressTimeout,
+pause: pauseProgress,
+resume: resumeProgress
 });
 
-if (notification.duration > 0) {
-setTimeout(() => {
-this.removeNotification(notificationElement);
-}, notification.duration);
+notificationElement.querySelector('.notification-close').addEventListener('click', () => {
+const timeoutData = this.notificationTimeouts.get(notificationElement);
+if (timeoutData && timeoutData.timeout) {
+clearTimeout(timeoutData.timeout);
 }
+this.notificationTimeouts.delete(notificationElement);
+this.removeNotification(notificationElement);
+});
 
 if (notification.type === 'success' || notification.type === 'error') {
 this.playNotificationSound();
@@ -812,6 +870,15 @@ this.playNotificationSound();
 
 removeNotification(notificationElement) {
 if (!notificationElement.parentNode) return;
+
+const timeoutData = this.notificationTimeouts.get(notificationElement);
+if (timeoutData && timeoutData.timeout) {
+clearTimeout(timeoutData.timeout);
+}
+this.notificationTimeouts.delete(notificationElement);
+
+notificationElement.removeEventListener('mouseenter', timeoutData?.pause);
+notificationElement.removeEventListener('mouseleave', timeoutData?.resume);
 
 notificationElement.classList.remove('show');
 setTimeout(() => {
@@ -1076,6 +1143,7 @@ this.currentProduct = product;
 const modal = document.getElementById('productModal');
 const title = document.getElementById('productModalTitle');
 
+this.prepareModal(modal, () => {
 if (product) {
 title.innerHTML = '<i class="fas fa-edit"></i> Editar Producto';
 document.getElementById('productId').value = product.id;
@@ -1110,8 +1178,7 @@ document.getElementById('productImageUpload').setAttribute('required', 'true');
 const dataField = document.getElementById('productImageData');
 if (dataField) dataField.value = '';
 }
-
-modal.style.display = 'block';
+});
 }
 
 openBannerModal(banner = null) {
@@ -1119,6 +1186,7 @@ this.currentBanner = banner;
 const modal = document.getElementById('bannerModal');
 const title = document.getElementById('bannerModalTitle');
 
+this.prepareModal(modal, () => {
 if (banner) {
 title.innerHTML = '<i class="fas fa-edit"></i> Editar Banner';
 document.getElementById('bannerId').value = banner.id;
@@ -1148,8 +1216,7 @@ document.getElementById('bannerImageUpload').setAttribute('required', 'true');
 const dataField = document.getElementById('bannerImageData');
 if (dataField) dataField.value = '';
 }
-
-modal.style.display = 'block';
+});
 }
 
 openNotificationModal(notification = null) {
@@ -1157,12 +1224,11 @@ this.currentNotification = notification;
 const modal = document.getElementById('notificationModal');
 const title = document.getElementById('notificationModalTitle');
 
-// Configurar opciones de envío por defecto
+this.prepareModal(modal, () => {
 document.querySelectorAll('.send-option-btn').forEach(btn => btn.classList.remove('active'));
 document.querySelector('.send-option-btn[data-type="immediately"]').classList.add('active');
 document.getElementById('scheduleFields').style.display = 'none';
 
-// Establecer fecha y hora mínima como ahora
 const now = new Date();
 const today = now.toISOString().split('T')[0];
 const currentTime12h = this.formatTimeTo12h(now.toTimeString().slice(0,5));
@@ -1184,9 +1250,7 @@ const formattedTime = this.formatTimeTo12h(sendDate.toTimeString().slice(0,5));
 document.getElementById('notificationSendDate').value = formattedDate;
 document.getElementById('notificationSendTime').value = formattedTime;
 
-// Configurar tipo de envío basado en la fecha programada
-const now = new Date();
-if (sendDate <= now) {
+if (sendDate <= new Date()) {
 document.querySelector('.send-option-btn[data-type="immediately"]').classList.add('active');
 document.querySelector('.send-option-btn[data-type="schedule"]').classList.remove('active');
 document.getElementById('scheduleFields').style.display = 'none';
@@ -1195,8 +1259,6 @@ document.querySelector('.send-option-btn[data-type="schedule"]').classList.add('
 document.querySelector('.send-option-btn[data-type="immediately"]').classList.remove('active');
 document.getElementById('scheduleFields').style.display = 'block';
 }
-
-// Mostrar u ocultar botón "Enviar Ahora" según estado
 document.getElementById('sendNotificationBtn').style.display = notification.is_sent ? 'none' : 'block';
 } else {
 title.innerHTML = '<i class="fas fa-plus"></i> Nueva Notificación';
@@ -1205,8 +1267,30 @@ document.getElementById('notificationType').value = 'info';
 document.getElementById('sendNotificationBtn').style.display = 'block';
 document.getElementById('notificationId').value = '';
 }
+});
+}
 
+prepareModal(modal, setupCallback) {
+this.closeAllModals();
+setupCallback();
 modal.style.display = 'block';
+requestAnimationFrame(() => {
+const modalContent = modal.querySelector('.modal-content');
+if (modalContent) {
+modalContent.style.transform = 'translate(-50%, -50%) scale(1)';
+}
+const modalBody = modal.querySelector('.modal-body');
+if (modalBody) {
+modalBody.style.overflowY = 'auto';
+modalBody.style.maxHeight = 'calc(85vh - 140px)';
+}
+});
+}
+
+closeAllModals() {
+document.querySelectorAll('.modal').forEach(modal => {
+modal.style.display = 'none';
+});
 }
 
 async saveProduct() {
