@@ -4,8 +4,10 @@ const urlsToCache = [
 '/client/index.html',
 '/client/styles.css',
 '/client/app.js',
+'/client/icon-192.png',
+'/client/icon-512.png',
 '/client/manifest.json',
-'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css'
+'/client/all.min.css'
 ];
 
 self.addEventListener('install', event => {

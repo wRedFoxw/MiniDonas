@@ -49,7 +49,6 @@ this.setupEventListeners();
 this.applyTheme();
 this.startNotificationPolling();
 this.startBannerRotation();
-// Agregar detección de orientación mejorada
 this.setupOrientationDetection();
 
 setTimeout(() => {
@@ -63,22 +62,18 @@ this.showAlert('Error', 'No se pudo cargar la aplicación. Intenta recargar la p
 }
 
 setupOrientationDetection() {
-// Detectar orientación inicial
 this.checkOrientation();
 
-// Escuchar cambios de tamaño
 window.addEventListener('resize', () => {
 this.checkOrientation();
 });
 
-// Escuchar evento de orientación específico
 window.addEventListener('orientationchange', () => {
 setTimeout(() => {
 this.checkOrientation();
 }, 300);
 });
 
-// Intentar bloquear orientación
 this.lockOrientation();
 }
 
@@ -188,6 +183,23 @@ cacheNames.map(cacheName => caches.delete(cacheName))
 } catch (error) {
 console.error('Error limpiando storage:', error);
 }
+}
+
+sortProductsByBadges(products) {
+return products.sort((a, b) => {
+const getProductWeight = (product) => {
+let weight = 0;
+if (product.is_new) weight += 1000;
+if (product.is_offer) weight += 100;
+if (product.is_best_seller) weight += 10;
+if (product.is_featured) weight += 1;
+weight += product.likes * 0.001;
+return weight;
+};
+const weightA = getProductWeight(a);
+const weightB = getProductWeight(b);
+return weightB - weightA;
+});
 }
 
 getDeviceId() {
@@ -714,15 +726,13 @@ this.nextBanner();
 renderProducts() {
 const container = document.getElementById('productsContainer');
 if (!container) return;
-
 container.innerHTML = '';
-
 if (!this.products || this.products.length === 0) {
 container.innerHTML = '<div class="no-products">No hay productos disponibles</div>';
 return;
 }
-
-this.products.forEach(product => {
+const sortedProducts = this.sortProductsByBadges(this.products);
+sortedProducts.forEach(product => {
 const productElement = this.createProductElement(product);
 container.appendChild(productElement);
 });
