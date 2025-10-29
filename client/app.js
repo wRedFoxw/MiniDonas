@@ -23,6 +23,7 @@ this.bannerStartX = 0;
 this.bannerCurrentX = 0;
 this.isBannerDragging = false;
 this.bannerTransitionEnabled = true;
+this.businessStatus = null;
 this.setupAppLifecycle();
 this.init();
 }
@@ -35,7 +36,7 @@ await this.cleanStorage();
 this.showLoading(30);
 await this.registerDevice();
 this.showLoading(50);
-await this.loadSettings();
+await this.loadBusinessStatus();
 this.showLoading(70);
 await Promise.all([
 this.loadBanners(),
@@ -185,7 +186,7 @@ console.error('Error limpiando storage:', error);
 }
 }
 
-sortProductsByBadges(products) {
+sortProductsByinsignias(products) {
 return products.sort((a, b) => {
 const getProductWeight = (product) => {
 let weight = 0;
@@ -292,7 +293,6 @@ setTimeout(() => this.connectRealtime(), 5000);
 handleRealtimeEvent(event, data) {
 switch (event) {
 case 'connected':
-console.log('Conectado al servidor con ID:', data.clientId);
 break;
 
 case 'products_updated':
@@ -307,8 +307,12 @@ case 'banners_updated':
 this.loadBanners();
 break;
 
-case 'settings_updated':
-this.loadSettings();
+case 'business_status_updated':
+this.loadBusinessStatus();
+break;
+
+case 'business_hours_updated':
+this.loadBusinessStatus();
 break;
 }
 }
@@ -320,13 +324,13 @@ switch (action) {
 case 'created':
 case 'updated':
 await this.loadProducts();
-this.showAlert('Éxito', `Producto ${action === 'created' ? 'agregado' : 'actualizado'} correctamente`);
+this.showAlert('Éxito', `Producto ${action === 'created' ? 'agregado' : 'actualizado'}`);
 break;
 
 case 'deleted':
 this.products = this.products.filter(p => p.id !== productId);
 this.renderProducts();
-this.showAlert('Éxito', 'Producto eliminado correctamente');
+this.showAlert('Éxito', 'Producto eliminado');
 break;
 }
 }
@@ -371,8 +375,8 @@ if (!('Notification' in window)) return;
 
 const options = {
 body: notification.message,
-icon: '/client/icons/icon-192.png',
-badge: '/client/icons/icon-192.png',
+icon: '/client/icon-192.png',
+badge: '/client/icon-192.png',
 tag: 'webapp-notification'
 };
 
@@ -471,6 +475,53 @@ console.error('Error al registrar dispositivo:', error);
 }
 }
 
+async loadBusinessStatus() {
+try {
+const status = await this.fetchData('business-status');
+this.businessStatus = status;
+this.updateBusinessStatusDisplay();
+} catch (error) {
+console.error('Error al cargar estado del establecimiento:', error);
+// Estado por defecto si hay error
+this.businessStatus = {
+is_open: true,
+is_forced: false,
+message: 'Abierto'
+};
+}
+}
+
+updateBusinessStatusDisplay() {
+const productsContainer = document.getElementById('productsContainer');
+if (!productsContainer) return;
+
+if (!this.businessStatus.is_open) {
+productsContainer.innerHTML = `
+<div class="business-closed-message">
+<div class="closed-icon">
+<i class="fas fa-door-closed"></i>
+</div>
+<h3>Estamos Cerrados</h3>
+<!--p>${this.businessStatus.message}</p-->
+${this.businessStatus.next_open_day ? `
+<div class="next-opening">
+<strong>Próxima apertura:</strong><br>
+${this.businessStatus.next_open_day.day_name} a las ${this.businessStatus.next_open_day.open_time}
+</div>
+` : ''}
+${this.businessStatus.next_open_time ? `
+<div class="next-opening">
+<strong>Abrimos a las:</strong><br>
+${this.businessStatus.next_open_time}
+</div>
+` : ''}
+</div>
+`;
+} else {
+this.renderProducts();
+}
+}
+
 async loadSettings() {
 this.settings = await this.fetchData('settings');
 if (this.settings && this.settings.logo_data) {
@@ -486,7 +537,6 @@ this.renderBanners();
 
 async loadProducts() {
 this.products = await this.fetchData('products');
-this.renderProducts();
 }
 
 async loadNotifications() {
@@ -726,12 +776,16 @@ this.nextBanner();
 renderProducts() {
 const container = document.getElementById('productsContainer');
 if (!container) return;
+if (this.businessStatus && !this.businessStatus.is_open) {
+return;
+}
+
 container.innerHTML = '';
 if (!this.products || this.products.length === 0) {
 container.innerHTML = '<div class="no-products">No hay productos disponibles</div>';
 return;
 }
-const sortedProducts = this.sortProductsByBadges(this.products);
+const sortedProducts = this.sortProductsByinsignias(this.products);
 sortedProducts.forEach(product => {
 const productElement = this.createProductElement(product);
 container.appendChild(productElement);
@@ -742,7 +796,7 @@ createProductElement(product) {
 const productCard = document.createElement('div');
 productCard.className = 'product-card';
 
-const badges = this.generateBadges(product);
+const insignias = this.generateinsignias(product);
 const hasVoted = this.votedProducts[product.id];
 const likeClass = hasVoted === 'like' ? 'active' : '';
 const dislikeClass = hasVoted === 'dislike' ? 'active' : '';
@@ -752,7 +806,7 @@ productCard.innerHTML = `
 <img class="product-image" src="${product.image_data}" alt="${product.name}" 
 onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjEyMCIgdmlld0JveD0iMCAwIDIwMCAxMjAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMTIwIiBmaWxsPSIjZTVlNWU1Ii8+Cjx0ZXh0IHg9IjEwMCIgeT0iNjAiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZG9taW5hbnQtYmFzZWxpbmU9Im1pZGRsZSI+RWwgZW1wcmVzYSBubyBwdWRvIGNhcmdhciBlc3RhIGltYWdlbjwvdGV4dD4KPC9zdmc+'">
 <div class="product-info">
-<div class="product-badges">${badges}</div>
+<div class="product-insignias">${insignias}</div>
 <div class="product-content">
 <div class="product-votes">
 <button class="vote-button like ${likeClass}" data-product-id="${product.id}">
@@ -778,15 +832,15 @@ this.handleVote(e.target.closest('.vote-button').dataset.productId, 'dislike');
 return productCard;
 }
 
-generateBadges(product) {
-const badges = [
+generateinsignias(product) {
+const insignias = [
 { key: 'is_new', label: 'Nuevo', class: 'new' },
 { key: 'is_offer', label: 'Oferta', class: 'offer' },
 { key: 'is_featured', label: 'Destacado', class: 'featured' },
 { key: 'is_best_seller', label: 'Más Vendido', class: 'best-seller' }
 ];
 
-return badges.map(badge => {
+return insignias.map(badge => {
 const isActive = product[badge.key];
 return `<span class="badge ${badge.class} ${isActive ? 'active' : 'inactive'}">${badge.label}</span>`;
 }).join('');

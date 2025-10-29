@@ -4,7 +4,7 @@ import pool from '../config/database.js';
 const router = express.Router();
 
 // Función para actualizar automáticamente las etiquetas de productos
-async function updateProductBadges(productId = null) {
+async function updateProductinsignias(productId = null) {
 let client;
 try {
 client = await pool.connect();
@@ -20,26 +20,136 @@ WHERE is_active = true
 ${productId ? 'AND id = $1' : ''}
 `, productId ? [productId] : []);
 
-console.log(`Badges actualizados ${productId ? `para producto ${productId}` : 'para todos los productos'}`);
+console.log(`insignias actualizados ${productId ? `para producto ${productId}` : 'para todos los productos'}`);
 } catch (error) {
-console.error('Error actualizando badges:', error);
+console.error('Error actualizando insignias:', error);
 } finally {
 if (client) client.release();
 }
 }
 
+// Obtener estado del negocio
+router.get('/business-status', async (req, res) => {
+let client;
+try {
+client = await pool.connect();
+
+// Obtener estado forzado
+const forcedStateResult = await client.query('SELECT * FROM business_forced_state WHERE id = 1');
+const forcedState = forcedStateResult.rows[0];
+
+// Si hay estado forzado activo
+if (forcedState && forcedState.is_forced) {
+const now = new Date();
+const forcedUntil = new Date(forcedState.forced_until);
+if (now <= forcedUntil) {
+return res.json({
+is_open: forcedState.forced_state,
+is_forced: true,
+forced_until: forcedState.forced_until,
+message: forcedState.forced_state ? 
+'Estamos abiertos (horario forzado)' : 
+'Estamos cerrados (horario forzado)'
+});
+}
+}
+
+// Obtener horarios regulares
+const hoursResult = await client.query('SELECT * FROM business_hours ORDER BY day_of_week');
+const businessHours = hoursResult.rows;
+
+const now = new Date();
+const currentDay = now.getDay(); // 0: Domingo, 1: Lunes, ..., 6: Sábado
+const currentTime = now.toTimeString().slice(0, 8); // HH:MM:SS
+
+// Buscar horario del día actual
+const todayHours = businessHours.find(h => h.day_of_week === currentDay);
+
+if (!todayHours || todayHours.is_closed) {
+// Buscar próximo día abierto
+let nextOpenDay = null;
+for (let i = 1; i <= 7; i++) {
+const nextDay = (currentDay + i) % 7;
+const nextDayHours = businessHours.find(h => h.day_of_week === nextDay && !h.is_closed);
+if (nextDayHours) {
+nextOpenDay = nextDayHours;
+break;
+}
+}
+
+return res.json({
+is_open: false,
+is_forced: false,
+next_open_day: nextOpenDay ? {
+day_name: nextOpenDay.day_name,
+open_time: nextOpenDay.open_time
+} : null,
+message: nextOpenDay ? 
+`Abrimos el ${nextOpenDay.day_name} a las ${nextOpenDay.open_time}` :
+'Cerrado temporalmente'
+});
+}
+
+// Verificar si estamos dentro del horario de hoy
+if (currentTime >= todayHours.open_time && currentTime <= todayHours.close_time) {
+return res.json({
+is_open: true,
+is_forced: false,
+closing_time: todayHours.close_time,
+message: `Cerramos a las ${todayHours.close_time}`
+});
+} else if (currentTime < todayHours.open_time) {
+return res.json({
+is_open: false,
+is_forced: false,
+next_open_time: todayHours.open_time,
+message: `Abrimos a las ${todayHours.open_time}`
+});
+} else {
+// Buscar próximo día abierto
+let nextOpenDay = null;
+for (let i = 1; i <= 7; i++) {
+const nextDay = (currentDay + i) % 7;
+const nextDayHours = businessHours.find(h => h.day_of_week === nextDay && !h.is_closed);
+if (nextDayHours) {
+nextOpenDay = nextDayHours;
+break;
+}
+}
+
+return res.json({
+is_open: false,
+is_forced: false,
+next_open_day: nextOpenDay ? {
+day_name: nextOpenDay.day_name,
+open_time: nextOpenDay.open_time
+} : null,
+message: nextOpenDay ? 
+`Abrimos el ${nextOpenDay.day_name} a las ${nextOpenDay.open_time}` :
+'Cerrado temporalmente'
+});
+}
+
+} catch (error) {
+console.error('Error al obtener estado del establecimiento:', error);
+res.status(500).json({ error: 'Error interno del servidor' });
+} finally {
+if (client) client.release();
+}
+});
+
 router.get('/products', async (req, res) => {
 let client;
 try {
-// Primero actualizamos los badges
-await updateProductBadges();
+// Primero actualizamos los insignias
+await updateProductinsignias();
 
 client = await pool.connect();
 const result = await client.query(`
 SELECT * FROM products 
 WHERE is_active = true 
 ORDER BY 
--- Orden de prioridad de badges
+-- Orden de prioridad de insignias
 CASE 
 WHEN is_new = true THEN 1
 WHEN is_offer = true THEN 2
@@ -86,29 +196,6 @@ if (client) client.release();
 }
 });
 
-router.get('/settings', async (req, res) => {
-let client;
-try {
-client = await pool.connect();
-const result = await client.query('SELECT * FROM settings WHERE id = 1');
-
-if (result.rows.length === 0) {
-const insertResult = await client.query(
-`INSERT INTO settings (id, logo_data, theme_color) 
-VALUES (1, '', '#e44d26')
-RETURNING *`
-);
-return res.json(insertResult.rows[0]);
-}
-res.json(result.rows[0]);
-} catch (error) {
-console.error('Error al obtener configuración:', error);
-res.status(500).json({ error: 'Error interno del servidor' });
-} finally {
-if (client) client.release();
-}
-});
-
 router.post('/vote', async (req, res) => {
 const { productId, type, deviceId } = req.body;
 let client;
@@ -142,8 +229,8 @@ await client.query(
 
 await client.query('COMMIT');
 
-// Actualizar badges del producto después del voto
-await updateProductBadges(productId);
+// Actualizar insignias del producto después del voto
+await updateProductinsignias(productId);
 
 res.json({ success: true, message: `Voto registrado (${type})` });
 } catch (error) {
@@ -155,13 +242,12 @@ if (client) client.release();
 }
 });
 
-// Endpoint para forzar actualización de badges (útil para mantenimiento)
-router.post('/update-badges', async (req, res) => {
+router.post('/update-insignias', async (req, res) => {
 try {
-await updateProductBadges();
-res.json({ success: true, message: 'Badges actualizados correctamente' });
+await updateProductinsignias();
+res.json({ success: true, message: 'Insignias actualizados' });
 } catch (error) {
-console.error('Error actualizando badges:', error);
+console.error('Error actualizando insignias:', error);
 res.status(500).json({ error: 'Error interno del servidor' });
 }
 });

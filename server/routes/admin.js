@@ -332,69 +332,236 @@ if (client) client.release();
 }
 });
 
-router.get('/settings', async (req, res) => {
+// Obtener horarios del establecimiento
+router.get('/business-hours', async (req, res) => {
 let client;
 try {
 client = await pool.connect();
-const result = await client.query('SELECT * FROM settings WHERE id = 1');
-
-if (result.rows.length === 0) {
-const insertResult = await client.query(
-`INSERT INTO settings (id, logo_data, theme_color) 
-VALUES (1, '', '#e44d26')
-RETURNING *`
-);
-return res.json(insertResult.rows[0]);
-}
-
-res.json(result.rows[0]);
+const result = await client.query('SELECT * FROM business_hours ORDER BY day_of_week');
+res.json(result.rows);
 } catch (error) {
-console.error('Error al obtener configuración:', error);
+console.error('Error al obtener horarios:', error);
 res.status(500).json({ error: 'Error interno del servidor' });
 } finally {
 if (client) client.release();
 }
 });
 
-router.put('/settings', async (req, res) => {
-const { logo_data, theme_color } = req.body;
-let client;
+// Función para convertir formato 24h a 12h
+const formatTimeTo12h = (time24) => {
+if (!time24) return '';
+const [hours, minutes] = time24.split(':');
+const hour = parseInt(hours, 10);
+const ampm = hour >= 12 ? 'PM' : 'AM';
+const hour12 = hour % 12 || 12;
+return `${hour12}:${minutes} ${ampm}`;
+};
 
+// Función para convertir formato 12h a 24h
+const formatTimeTo24h = (time12) => {
+if (!time12) return '';
+const [time, ampm] = time12.split(' ');
+let [hours, minutes] = time.split(':');
+let hour = parseInt(hours, 10);
+if (ampm === 'PM' && hour < 12) hour += 12;
+if (ampm === 'AM' && hour === 12) hour = 0;
+return `${hour.toString().padStart(2, '0')}:${minutes}`;
+};
+
+// Actualizar horarios del establecimiento
+router.put('/business-hours', async (req, res) => {
+const { hours } = req.body;
+let client;
+try {
+client = await pool.connect();
+await client.query('BEGIN');
+
+for (const hour of hours) {
+// Convertir de 12h a 24h para almacenar en BD
+const openTime24 = hour.open_time ? formatTimeTo24h(hour.open_time) : null;
+const closeTime24 = hour.close_time ? formatTimeTo24h(hour.close_time) : null;
+
+await client.query(
+`UPDATE business_hours 
+SET open_time = $1, close_time = $2, is_closed = $3, updated_at = NOW()
+WHERE day_of_week = $4`,
+[openTime24, closeTime24, hour.is_closed, hour.day_of_week]
+);
+}
+
+await client.query('COMMIT');
+
+notifyClients('business_hours_updated', { 
+message: 'Horarios actualizados',
+hours: hours
+});
+
+res.json({ success: true, message: 'Horarios actualizados' });
+} catch (error) {
+await client.query('ROLLBACK');
+console.error('Error al actualizar horarios:', error);
+res.status(500).json({ error: 'Error interno del servidor' });
+} finally {
+if (client) client.release();
+}
+});
+
+// Obtener estado forzado
+router.get('/business-forced-state', async (req, res) => {
+let client;
+try {
+client = await pool.connect();
+const result = await client.query('SELECT * FROM business_forced_state WHERE id = 1');
+res.json(result.rows[0] || {});
+} catch (error) {
+console.error('Error al obtener estado forzado:', error);
+res.status(500).json({ error: 'Error interno del servidor' });
+} finally {
+if (client) client.release();
+}
+});
+
+// Actualizar estado forzado
+router.put('/business-forced-state', async (req, res) => {
+const { is_forced, forced_state, forced_until } = req.body;
+let client;
+try {
+client = await pool.connect();
+const result = await client.query(
+`UPDATE business_forced_state 
+SET is_forced = $1, forced_state = $2, forced_until = $3, updated_at = NOW()
+WHERE id = 1
+RETURNING *`,
+[is_forced, forced_state, forced_until]
+);
+
+if (result.rows.length === 0) {
+return res.status(404).json({ error: 'Estado forzado no encontrado' });
+}
+
+// Notificar a todos los clientes sobre el cambio de estado
+notifyClients('business_status_updated', { 
+is_forced: result.rows[0].is_forced,
+forced_state: result.rows[0].forced_state,
+forced_until: result.rows[0].forced_until
+});
+
+res.json({ success: true, forcedState: result.rows[0] });
+} catch (error) {
+console.error('Error al actualizar estado forzado:', error);
+res.status(500).json({ error: 'Error interno del servidor' });
+} finally {
+if (client) client.release();
+}
+});
+
+// Obtener estado actual del negocio (para cliente)
+router.get('/business-status', async (req, res) => {
+let client;
 try {
 client = await pool.connect();
 
-const updateFields = ['theme_color = $1'];
-const values = [theme_color || '#e44d26'];
+// Obtener estado forzado
+const forcedStateResult = await client.query('SELECT * FROM business_forced_state WHERE id = 1');
+const forcedState = forcedStateResult.rows[0];
 
-if (logo_data && logo_data.startsWith('data:image')) {
-updateFields.push('logo_data = $2');
-values.push(logo_data);
+if (forcedState && forcedState.is_forced) {
+const now = new Date();
+const forcedUntil = new Date(forcedState.forced_until);
+if (now <= forcedUntil) {
+return res.json({
+is_open: forcedState.forced_state,
+is_forced: true,
+forced_until: forcedState.forced_until,
+message: forcedState.forced_state ? 
+'Estamos abiertos (horario forzado)' : 
+'Estamos cerrados (horario forzado)'
+});
+}
 }
 
-values.push(1);
+// Obtener horarios regulares
+const hoursResult = await client.query('SELECT * FROM business_hours ORDER BY day_of_week');
+const businessHours = hoursResult.rows;
 
-const query = `
-UPDATE settings 
-SET ${updateFields.join(', ')}
-WHERE id = $${values.length}
-RETURNING *
-`;
+const now = new Date();
+// Ajustar a zona horaria de Cuba (UTC-5, pero puede variar con horario de verano)
+const cubaOffset = -5 * 60; // UTC-5 en minutos
+const localTime = new Date(now.getTime() + (cubaOffset + now.getTimezoneOffset()) * 60000);
 
-const result = await client.query(query, values);
+const currentDay = localTime.getDay(); // 0: Domingo, 1: Lunes, ..., 6: Sábado
+const currentTime = localTime.toTimeString().slice(0, 8); // HH:MM:SS
 
-if (result.rows.length === 0) {
-const insertResult = await client.query(
-`INSERT INTO settings (id, logo_data, theme_color) 
-VALUES (1, $1, $2)
-RETURNING *`,
-[logo_data || '', theme_color || '#e44d26']
-);
-return res.json(insertResult.rows[0]);
+// Buscar horario del día actual
+const todayHours = businessHours.find(h => h.day_of_week === currentDay);
+
+if (!todayHours || todayHours.is_closed) {
+// Buscar próximo día abierto
+let nextOpenDay = null;
+for (let i = 1; i <= 7; i++) {
+const nextDay = (currentDay + i) % 7;
+const nextDayHours = businessHours.find(h => h.day_of_week === nextDay && !h.is_closed);
+if (nextDayHours) {
+nextOpenDay = nextDayHours;
+break;
+}
 }
 
-res.json(result.rows[0]);
+return res.json({
+is_open: false,
+is_forced: false,
+next_open_day: nextOpenDay ? {
+day_name: nextOpenDay.day_name,
+open_time: formatTimeTo12h(nextOpenDay.open_time)
+} : null,
+message: nextOpenDay ? 
+`Abrimos el ${nextOpenDay.day_name} a las ${formatTimeTo12h(nextOpenDay.open_time)}` :
+'Cerrado temporalmente'
+});
+}
+
+// Verificar si estamos dentro del horario de hoy
+if (currentTime >= todayHours.open_time && currentTime <= todayHours.close_time) {
+return res.json({
+is_open: true,
+is_forced: false,
+closing_time: formatTimeTo12h(todayHours.close_time),
+message: `Cerramos a las ${formatTimeTo12h(todayHours.close_time)}`
+});
+} else if (currentTime < todayHours.open_time) {
+return res.json({
+is_open: false,
+is_forced: false,
+next_open_time: formatTimeTo12h(todayHours.open_time),
+message: `Abrimos a las ${formatTimeTo12h(todayHours.open_time)}`
+});
+} else {
+// Buscar próximo día abierto
+let nextOpenDay = null;
+for (let i = 1; i <= 7; i++) {
+const nextDay = (currentDay + i) % 7;
+const nextDayHours = businessHours.find(h => h.day_of_week === nextDay && !h.is_closed);
+if (nextDayHours) {
+nextOpenDay = nextDayHours;
+break;
+}
+}
+
+return res.json({
+is_open: false,
+is_forced: false,
+next_open_day: nextOpenDay ? {
+day_name: nextOpenDay.day_name,
+open_time: formatTimeTo12h(nextOpenDay.open_time)
+} : null,
+message: nextOpenDay ? 
+`Abrimos el ${nextOpenDay.day_name} a las ${formatTimeTo12h(nextOpenDay.open_time)}` :
+'Cerrado temporalmente'
+});
+}
+
 } catch (error) {
-console.error('Error al actualizar configuración:', error);
+console.error('Error al obtener estado del establecimiento:', error);
 res.status(500).json({ error: 'Error interno del servidor' });
 } finally {
 if (client) client.release();
@@ -551,15 +718,15 @@ if (client) client.release();
 }
 });
 
-// Endpoint para forzar actualización de badges
-router.post('/products/update-badges', async (req, res) => {
+// Endpoint para forzar actualización de insignias
+router.post('/products/update-insignias', async (req, res) => {
 let client;
 try {
 client = await pool.connect();
 
-console.log('Iniciando actualización forzada de badges...');
+console.log('Iniciando actualización forzada de insignias...');
 
-// Actualizar badges basado en reglas de negocio
+// Actualizar insignias basado en reglas de negocio
 const updateResult = await client.query(`
 UPDATE products 
 SET 
@@ -579,24 +746,24 @@ best_seller: updateResult.rows.filter(p => p.is_best_seller).length,
 new: updateResult.rows.filter(p => p.is_new).length
 };
 
-console.log('Actualización de badges completada:', stats);
+console.log('Actualización de insignias completada:', stats);
 
 // Notificar a todos los clientes sobre la actualización masiva
 notifyClients('products_updated', { 
 action: 'bulk_update',
 stats: stats,
-message: 'Badges actualizados automáticamente'
+message: 'Insignias actualizados automáticamente'
 });
 
 res.json({ 
 success: true, 
-message: 'Badges actualizados correctamente',
+message: 'Insignias actualizados',
 stats: stats,
 updatedProducts: updateResult.rows.length
 });
 
 } catch (error) {
-console.error('Error al actualizar badges:', error);
+console.error('Error al actualizar insignias:', error);
 res.status(500).json({ 
 error: 'Error interno del servidor',
 details: process.env.NODE_ENV === 'development' ? error.message : undefined
@@ -606,8 +773,8 @@ if (client) client.release();
 }
 });
 
-// Endpoint para obtener estadísticas de badges actuales
-router.get('/products/badges-stats', async (req, res) => {
+// Endpoint para obtener estadísticas de insignias actuales
+router.get('/products/insignias-stats', async (req, res) => {
 let client;
 try {
 client = await pool.connect();
@@ -649,7 +816,7 @@ new: parseInt(stats.expired_new)
 });
 
 } catch (error) {
-console.error('Error al obtener estadísticas de badges:', error);
+console.error('Error al obtener estadísticas de insignias:', error);
 res.status(500).json({ error: 'Error interno del servidor' });
 } finally {
 if (client) client.release();
