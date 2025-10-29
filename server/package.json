@@ -2,6 +2,7 @@
   "name": "webapp-server",
   "version": "1.0.0",
   "description": "Backend for mobile webapp",
+  "license": "MIT",
   "main": "server.js",
   "type": "module",
   "scripts": {
