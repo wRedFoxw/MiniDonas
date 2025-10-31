@@ -183,10 +183,35 @@ const existingVotes = await client.query(
 );
 
 if (existingVotes.rows.length > 0) {
+const existingVote = existingVotes.rows[0];
+
+if (existingVote.type !== type) {
+await client.query(
+'DELETE FROM votes WHERE product_id = $1 AND device_id = $2',
+[productId, deviceId]
+);
+
+const previousColumn = existingVote.type === 'like' ? 'likes' : 'dislikes';
+await client.query(
+`UPDATE products SET ${previousColumn} = ${previousColumn} - 1 WHERE id = $1`,
+[productId]
+);
+
+await client.query(
+'INSERT INTO votes (product_id, device_id, type) VALUES ($1, $2, $3)',
+[productId, deviceId, type]
+);
+
+const newColumn = type === 'like' ? 'likes' : 'dislikes';
+await client.query(
+`UPDATE products SET ${newColumn} = ${newColumn} + 1 WHERE id = $1`,
+[productId]
+);
+} else {
 await client.query('ROLLBACK');
 return res.status(400).json({ error: 'Ya has votado por este producto' });
 }
-
+} else {
 await client.query(
 'INSERT INTO votes (product_id, device_id, type) VALUES ($1, $2, $3)',
 [productId, deviceId, type]
@@ -197,6 +222,7 @@ await client.query(
 `UPDATE products SET ${columnToUpdate} = ${columnToUpdate} + 1 WHERE id = $1`,
 [productId]
 );
+}
 
 await client.query('COMMIT');
 await updateProductInsignias(productId);
@@ -209,7 +235,11 @@ action: 'updated',
 product: updatedProduct 
 });
 
-res.json({ success: true, message: `Voto registrado (${type})` });
+res.json({ 
+success: true, 
+message: `Voto ${existingVotes.rows.length > 0 ? 'cambiado' : 'registrado'} (${type})`,
+product: updatedProduct
+});
 } catch (error) {
 if (client) await client.query('ROLLBACK');
 console.error('Error al registrar voto:', error);
