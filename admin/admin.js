@@ -10,18 +10,18 @@ this.bannersLoaded = false;
 this.notificationsLoaded = false;
 this.hoursLoaded = false;
 
-// sonido de notificaci車n
+// sonido de notificaci\u00F3n
 this.notificationSound = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==');
 
 // cola de notificaciones in-app
 this.notificationQueue = [];
 this.isShowingNotification = false;
-this.notificationTimeouts = new Map(); // guarda rafIds, pause/resume funciones
+this.notificationTimeouts = new Map();
 
 this.init();
 }
 
-/* ========== Inicializaci車n ========== */
+/* ========== Inicializaci\u00F3n ========== */
 async init() {
 try {
 this.showGlobalLoading(true);
@@ -56,7 +56,7 @@ loader.className = 'global-loader';
 loader.innerHTML = `
 <div class="loader-content">
 <div class="loader-spinner"></div>
-<p>Cargando panel de administraci車n...</p>
+<p>Cargando panel de administraci\u00F3n...</p>
 </div>
 `;
 document.body.appendChild(loader);
@@ -192,7 +192,7 @@ console.error('Error loading notification stats:', error);
 }
 }
 
-/* ========== Renderizado (productos/banners/horarios/notificaciones) ========== */
+/* ========== Renderizado ========== */
 renderProducts(products) {
 const container = document.getElementById('productsList');
 if (!container) return;
@@ -265,7 +265,7 @@ container.innerHTML = `
 <div class="${statusClass}">
 <div class="status-item">
 <span class="status-label">Estado:</span>
-<span class="status-value">${status.is_open ? '?? ABIERTO' : '?? CERRADO'}</span>
+<span class="status-value">${status.is_open ? '\u2705 ABIERTO' : '\u274C CERRADO'}</span>
 ${status.is_forced ? ' <small>(Forzado)</small>' : ''}
 </div>
 ${status.closing_time ? `
@@ -280,7 +280,7 @@ ${status.next_open_time ? `
 </div>` : ''}
 ${status.next_open_day ? `
 <div class="status-item">
-<span class="status-label">Pr車xima apertura:</span>
+<span class="status-label">Pr\u00F3xima apertura:</span>
 <span class="status-value">${status.next_open_day.day_name} a las ${status.next_open_day.open_time}</span>
 </div>` : ''}
 <div class="status-message">${status.message}</div>
@@ -302,7 +302,7 @@ container.appendChild(notificationElement);
 });
 }
 
-/* ========== Creaci車n de elementos UI ========== */
+/* ========== Creaci\u00F3n de elementos UI ========== */
 createProductElement(product) {
 const div = document.createElement('div');
 div.className = `product-item ${!product.is_active ? 'product-inactive' : ''}`;
@@ -311,7 +311,7 @@ const insignias = [];
 if (product.is_new) insignias.push('Nuevo');
 if (product.is_offer) insignias.push('Oferta');
 if (product.is_featured) insignias.push('Destacado');
-if (product.is_best_seller) insignias.push('M芍s Vendido');
+if (product.is_best_seller) insignias.push('M\u00E1s Vendido');
 
 div.innerHTML = `
 <div class="product-info">
@@ -343,7 +343,7 @@ div.className = `banner-item ${!banner.is_active ? 'banner-inactive' : ''}`;
 
 div.innerHTML = `
 <div class="banner-info">
-<h4>${this.escapeHtml(banner.title || 'Sin t赤tulo')}</h4>
+<h4>${this.escapeHtml(banner.title || 'Sin t\u00EDtulo')}</h4>
 <p>${this.escapeHtml(banner.subtitle || '')}</p>
 <p><small><i class="fas fa-eye"></i> Estado: ${banner.is_active ? 'Activo' : 'Inactivo'}</small></p>
 </div>
@@ -388,7 +388,7 @@ div.innerHTML = `
 <div class="business-hour-checkbox">
 <label>
 <input type="checkbox" class="is-closed" ${hour.is_closed ? 'checked' : ''}>
-<span class="checkbox-label">Cerrado este d赤a</span>
+<span class="checkbox-label">Cerrado este d\u00EDa</span>
 </label>
 </div>
 `;
@@ -410,11 +410,11 @@ const div = document.createElement('div');
 div.className = 'notification-item';
 
 const typeLabels = {
-'info': 'Informaci車n',
-'success': '谷xito',
+'info': 'Informaci\u00F3n',
+'success': '\u00C9xito',
 'warning': 'Advertencia',
 'error': 'Error',
-'promo': 'Promoci車n'
+'promo': 'Promoci\u00F3n'
 };
 
 const sendDate = new Date(notification.send_at).toLocaleString('es-CU');
@@ -490,8 +490,8 @@ const closeTime = item.querySelector('.close-time').value;
 const isClosed = item.querySelector('.is-closed').checked;
 
 const dayMap = {
-'Domingo': 0, 'Lunes': 1, 'Martes': 2, 'Mi谷rcoles': 3,
-'Jueves': 4, 'Viernes': 5, 'S芍bado': 6
+'Domingo': 0, 'Lunes': 1, 'Martes': 2, 'Mi\u00E9rcoles': 3,
+'Jueves': 4, 'Viernes': 5, 'S\u00E1bado': 6
 };
 
 hours.push({
@@ -517,7 +517,7 @@ body: JSON.stringify({ hours })
 });
 
 if (result && result.success) {
-this.showNotification('谷xito', 'Horarios guardados correctamente', 'success');
+this.showNotification('\u00C9xito', 'Horarios guardados correctamente', 'success');
 await this.loadCurrentStatus();
 }
 } catch (error) {
@@ -535,7 +535,7 @@ const forcedState = document.querySelector('.state-action-btn.active')?.dataset.
 const forcedUntil = document.getElementById('forcedUntil').value;
 
 if (isForced && !forcedUntil) {
-this.showNotification('Error', 'Debes especificar hasta cu芍ndo aplicar el estado forzado', 'error');
+this.showNotification('Error', 'Debes especificar hasta cu\u00E1ndo aplicar el estado forzado', 'error');
 return;
 }
 
@@ -558,7 +558,7 @@ forced_until: forcedUntil
 });
 
 if (result && result.success) {
-this.showNotification('谷xito', 'Estado forzado guardado correctamente', 'success');
+this.showNotification('\u00C9xito', 'Estado forzado guardado correctamente', 'success');
 await this.loadCurrentStatus();
 }
 } catch (error) {
@@ -570,9 +570,9 @@ saveButton.disabled = false;
 }
 }
 
-/* ========== Event listeners y navegaci車n ========== */
+/* ========== Event listeners y navegaci\u00F3n ========== */
 setupEventListeners() {
-// Navegaci車n entre pesta?as
+// Navegaci\u00F3n entre pesta?as
 document.querySelectorAll('.nav-btn').forEach(btn => {
 btn.addEventListener('click', (e) => {
 document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
@@ -618,7 +618,7 @@ this.saveNotification();
 const sendNotificationBtn = document.getElementById('sendNotificationBtn');
 if (sendNotificationBtn) sendNotificationBtn.addEventListener('click', () => this.sendCurrentNotification());
 
-// Opciones de env赤o
+// Opciones de env\u00EDo
 document.querySelectorAll('.send-option-btn').forEach(btn => {
 btn.addEventListener('click', (e) => {
 document.querySelectorAll('.send-option-btn').forEach(b => b.classList.remove('active'));
@@ -657,7 +657,7 @@ if (updInsBtn) updInsBtn.addEventListener('click', (e) => this.updateinsignias()
 const showInsStatsBtn = document.getElementById('showinsigniasStatsBtn');
 if (showInsStatsBtn) showInsStatsBtn.addEventListener('click', () => this.showinsigniasStats());
 
-// Cierre de modales por el bot車n close
+// Cierre de modales
 document.querySelectorAll('.close').forEach(closeBtn => {
 closeBtn.addEventListener('click', (e) => {
 e.stopPropagation();
@@ -666,7 +666,6 @@ if (modal) modal.style.display = 'none';
 });
 });
 
-// Cerrar modal al hacer clic fuera
 document.querySelectorAll('.modal').forEach(modal => {
 modal.addEventListener('click', (e) => {
 if (e.target === modal) modal.style.display = 'none';
@@ -788,14 +787,12 @@ notificationElement.innerHTML = `
 
 notificationContainer.appendChild(notificationElement);
 
-// Forzar la animaci車n de entrada
 requestAnimationFrame(() => {
 requestAnimationFrame(() => {
 notificationElement.classList.add('show');
 });
 });
 
-// Manejo de progreso con timestamps (m芍s fiable que basarse en width)
 const progressFill = notificationElement.querySelector('.progress-bar-fill');
 let startTime = performance.now();
 let remaining = notification.duration;
@@ -808,13 +805,11 @@ const updateProgress = () => {
 const now = performance.now();
 const ratio = Math.max(0, Math.min(1, (endTime - now) / notification.duration));
 if (progressFill) {
-// scaleX para animaci車n suave y reversible
 progressFill.style.transform = `scaleX(${ratio})`;
 }
 if (now < endTime) {
 rafId = requestAnimationFrame(updateProgress);
 } else {
-// tiempo cumplido -> remover
 this.removeNotification(notificationElement);
 }
 };
@@ -833,7 +828,6 @@ pausedAt = performance.now();
 remaining = Math.max(0, endTime - pausedAt);
 if (rafId) cancelAnimationFrame(rafId);
 notificationElement.classList.add('hover-paused');
-// almacenar escala pausada para CSS fallback
 const scale = remaining / notification.duration;
 notificationElement.style.setProperty('--paused-scale', String(scale));
 };
@@ -845,28 +839,23 @@ startTimer();
 notificationElement.classList.remove('hover-paused');
 };
 
-// Eventos de hover para pausar y reanudar
 notificationElement.addEventListener('mouseenter', pauseTimer);
 notificationElement.addEventListener('mouseleave', resumeTimer);
 
-// Bot車n cerrar
 const closeBtn = notificationElement.querySelector('.notification-close');
 closeBtn.addEventListener('click', () => {
 if (rafId) cancelAnimationFrame(rafId);
 this.removeNotification(notificationElement);
 });
 
-// Iniciar temporizador
 startTimer();
 
-// Guardar referencias para limpiar si es necesario
 this.notificationTimeouts.set(notificationElement, {
 rafId,
 pause: pauseTimer,
 resume: resumeTimer
 });
 
-// Sonido para success/error
 if (notification.type === 'success' || notification.type === 'error') {
 this.playNotificationSound();
 }
@@ -881,13 +870,10 @@ if (timeoutData.rafId) cancelAnimationFrame(timeoutData.rafId);
 this.notificationTimeouts.delete(notificationElement);
 }
 
-// remover listeners de hover si se guardaron
 try {
 notificationElement.removeEventListener('mouseenter', timeoutData?.pause);
 notificationElement.removeEventListener('mouseleave', timeoutData?.resume);
-} catch (e) {
-// noop
-}
+} catch (e) {}
 
 notificationElement.classList.remove('show');
 setTimeout(() => {
@@ -895,7 +881,6 @@ if (notificationElement.parentNode) {
 notificationElement.parentNode.removeChild(notificationElement);
 }
 this.isShowingNotification = false;
-// procesar siguiente en la cola
 this.processNotificationQueue();
 }, 300);
 }
@@ -914,12 +899,11 @@ playNotificationSound() {
 if (!this.notificationSound) return;
 this.notificationSound.currentTime = 0;
 this.notificationSound.play().catch(e => {
-// silenciar errores por pol赤ticas del navegador
-console.log('No se pudo reproducir el sonido de notificaci車n');
+console.log('No se pudo reproducir el sonido de notificaci\u00F3n');
 });
 }
 
-/* ========== Confirmaci車n modal ligero ========== */
+/* ========== Confirmaci\u00F3n modal ligero ========== */
 async showConfirmation(title, message) {
 return new Promise((resolve) => {
 const modal = document.createElement('div');
@@ -938,7 +922,6 @@ modal.innerHTML = `
 `;
 
 document.body.appendChild(modal);
-// asegurar close
 modal.style.display = 'block';
 
 const cleanup = () => {
@@ -979,7 +962,7 @@ this.eventSource = new EventSource('/api/realtime/events');
 
 this.eventSource.onopen = () => {
 console.log('Conectado al servidor SSE');
-this.showNotification('Conexi車n establecida', 'Conectado al servidor en tiempo real', 'success', 3000);
+this.showNotification('Conexi\u00F3n establecida', 'Conectado al servidor en tiempo real', 'success', 3000);
 };
 
 this.eventSource.onmessage = (event) => {
@@ -992,7 +975,7 @@ console.error('Error procesando evento SSE:', error);
 };
 
 this.eventSource.onerror = (event) => {
-console.error('Error en conexi車n SSE - intentando reconectar');
+console.error('Error en conexi\u00F3n SSE - intentando reconectar');
 if (this.eventSource.readyState === EventSource.CLOSED) {
 setTimeout(() => this.setupSSE(), 5000);
 }
@@ -1093,7 +1076,7 @@ if (Notification.permission === "default") {
 try {
 const permission = await Notification.requestPermission();
 if (permission === "granted") {
-this.showNotification('Notificaciones activadas', 'Ahora recibir芍s notificaciones push', 'success', 5000);
+this.showNotification('Notificaciones activadas', 'Ahora recibir\u00E1s notificaciones push', 'success', 5000);
 }
 } catch (error) {
 console.error('Error solicitando permiso de notificaciones:', error);
@@ -1119,7 +1102,7 @@ const preview = document.getElementById(previewId);
 
 if (file) {
 if (!file.type.startsWith('image/')) {
-this.showNotification('Error', 'Por favor selecciona un archivo de imagen v芍lido', 'error');
+this.showNotification('Error', 'Por favor selecciona un archivo de imagen v\u00E1lido', 'error');
 input.value = '';
 return;
 }
@@ -1154,7 +1137,7 @@ input.setAttribute('required', 'true');
 }
 }
 
-/* ========== Modales CRUD (asegurar que footer siempre accesible) ========== */
+/* ========== Modales CRUD ========== */
 openProductModal(product = null) {
 this.currentProduct = product;
 const modal = document.getElementById('productModal');
@@ -1256,7 +1239,7 @@ document.getElementById('notificationSendDate').value = today;
 document.getElementById('notificationSendTime').value = currentTime12h;
 
 if (notification) {
-title.innerHTML = '<i class="fas fa-edit"></i> Editar Notificaci車n';
+title.innerHTML = '<i class="fas fa-edit"></i> Editar Notificaci\u00F3n';
 document.getElementById('notificationId').value = notification.id;
 document.getElementById('notificationTitle').value = notification.title;
 document.getElementById('notificationMessage').value = notification.message;
@@ -1280,7 +1263,7 @@ if (scheduleFields) scheduleFields.style.display = 'block';
 }
 document.getElementById('sendNotificationBtn').style.display = notification.is_sent ? 'none' : 'block';
 } else {
-title.innerHTML = '<i class="fas fa-plus"></i> Nueva Notificaci車n';
+title.innerHTML = '<i class="fas fa-plus"></i> Nueva Notificaci\u00F3n';
 document.getElementById('notificationForm').reset();
 document.getElementById('notificationType').value = 'info';
 document.getElementById('sendNotificationBtn').style.display = 'block';
@@ -1290,15 +1273,10 @@ document.getElementById('notificationId').value = '';
 }
 
 prepareModal(modal, setupCallback) {
-// cerrar otros modales
 this.closeAllModals();
-// ejecutar callback para rellenar contenido
 setupCallback();
-
-// mostrar modal
 modal.style.display = 'block';
 
-// asegurar que el contenido tenga scroll interno y footer visible
 requestAnimationFrame(() => {
 const modalContent = modal.querySelector('.modal-content');
 if (modalContent) {
@@ -1345,7 +1323,6 @@ return;
 const productId = document.getElementById('productId').value;
 let result;
 
-// bot車n submit
 let submitButton = document.querySelector('#productForm button[type="submit"]');
 if (!submitButton) submitButton = document.querySelector('#productForm .btn-primary');
 if (!submitButton) submitButton = document.querySelector('.modal-footer .btn-primary');
@@ -1375,7 +1352,7 @@ body: JSON.stringify(formData)
 
 if (result) {
 document.getElementById('productModal').style.display = 'none';
-this.showNotification('谷xito', `Producto ${productId ? 'actualizado' : 'creado'} correctamente`, 'success');
+this.showNotification('\u00C9xito', `Producto ${productId ? 'actualizado' : 'creado'} correctamente`, 'success');
 await this.loadProducts();
 }
 } catch (error) {
@@ -1434,7 +1411,7 @@ body: JSON.stringify(formData)
 
 if (result) {
 document.getElementById('bannerModal').style.display = 'none';
-this.showNotification('谷xito', `Banner ${bannerId ? 'actualizado' : 'creado'} correctamente`, 'success');
+this.showNotification('\u00C9xito', `Banner ${bannerId ? 'actualizado' : 'creado'} correctamente`, 'success');
 await this.loadBanners();
 }
 } catch (error) {
@@ -1459,7 +1436,7 @@ const sendDate = document.getElementById('notificationSendDate').value;
 const sendTime = document.getElementById('notificationSendTime').value;
 
 if (!sendDate || !sendTime) {
-this.showNotification('Error', 'Debes especificar fecha y hora para el env赤o programado', 'error');
+this.showNotification('Error', 'Debes especificar fecha y hora para el env\u00EDo programado', 'error');
 return false;
 }
 
@@ -1477,7 +1454,7 @@ send_at: sendAt
 };
 
 if (!formData.title || !formData.message) {
-this.showNotification('Error', 'T赤tulo y mensaje son campos requeridos', 'error');
+this.showNotification('Error', 'T\u00EDtulo y mensaje son campos requeridos', 'error');
 return false;
 }
 
@@ -1513,14 +1490,14 @@ if (result) {
 if (!notificationId && result.id) {
 document.getElementById('notificationId').value = result.id;
 }
-this.showNotification('谷xito', `Notificaci車n ${notificationId ? 'actualizada' : 'creada'} correctamente`, 'success');
+this.showNotification('\u00C9xito', `Notificaci\u00F3n ${notificationId ? 'actualizada' : 'creada'} correctamente`, 'success');
 await this.loadNotifications();
 await this.loadNotificationStats();
 return true;
 }
 return false;
 } catch (error) {
-this.showNotification('Error', error.message || 'Error al guardar la notificaci車n', 'error');
+this.showNotification('Error', error.message || 'Error al guardar la notificaci\u00F3n', 'error');
 return false;
 } finally {
 if (submitButton) {
@@ -1533,8 +1510,8 @@ submitButton.disabled = false;
 
 async sendNotification(id) {
 const confirmed = await this.showConfirmation(
-'Enviar notificaci車n',
-'?Est芍s seguro de que quieres enviar esta notificaci車n ahora?'
+'Enviar notificaci\u00F3n',
+'\u00BFEst\u00E1s seguro de que quieres enviar esta notificaci\u00F3n ahora?'
 );
 
 if (!confirmed) return;
@@ -1544,14 +1521,14 @@ const result = await this.fetchData(`notifications/${id}/send`, { method: 'POST'
 if (result && result.success) {
 await this.loadNotifications();
 await this.loadNotificationStats();
-this.showNotification('谷xito', 'Notificaci車n enviada correctamente', 'success');
+this.showNotification('\u00C9xito', 'Notificaci\u00F3n enviada correctamente', 'success');
 
 if (result.notification) {
 this.showPushNotification(result.notification);
 }
 }
 } catch (error) {
-this.showNotification('Error', error.message || 'Error al enviar la notificaci車n', 'error');
+this.showNotification('Error', error.message || 'Error al enviar la notificaci\u00F3n', 'error');
 }
 }
 
@@ -1563,7 +1540,7 @@ if (notificationId) {
 await this.sendNotification(notificationId);
 document.getElementById('notificationModal').style.display = 'none';
 } else {
-this.showNotification('Error', 'No se pudo obtener el ID de la notificaci車n', 'error');
+this.showNotification('Error', 'No se pudo obtener el ID de la notificaci\u00F3n', 'error');
 }
 }
 
@@ -1597,21 +1574,21 @@ const notification = notifications.find(n => n.id == id);
 if (notification) this.openNotificationModal(notification);
 } catch (error) {
 console.error('Error editing notification:', error);
-this.showNotification('Error', 'Error al cargar la notificaci車n', 'error');
+this.showNotification('Error', 'Error al cargar la notificaci\u00F3n', 'error');
 }
 }
 
 async deleteProduct(id) {
 const confirmed = await this.showConfirmation(
 'Eliminar producto',
-'?Est芍s seguro de que quieres eliminar este producto? Esta acci車n no se puede deshacer.'
+'\u00BFEst\u00E1s seguro de que quieres eliminar este producto? Esta acci\u00F3n no se puede deshacer.'
 );
 if (!confirmed) return;
 
 try {
 const result = await this.fetchData(`products/${id}`, { method: 'DELETE' });
 if (result) {
-this.showNotification('谷xito', 'Producto eliminado correctamente', 'success');
+this.showNotification('\u00C9xito', 'Producto eliminado correctamente', 'success');
 await this.loadProducts();
 }
 } catch (error) {
@@ -1622,14 +1599,14 @@ this.showNotification('Error', error.message || 'Error al eliminar el producto',
 async deleteBanner(id) {
 const confirmed = await this.showConfirmation(
 'Eliminar banner',
-'?Est芍s seguro de que quieres eliminar este banner? Esta acci車n no se puede deshacer.'
+'\u00BFEst\u00E1s seguro de que quieres eliminar este banner? Esta acci\u00F3n no se puede deshacer.'
 );
 if (!confirmed) return;
 
 try {
 const result = await this.fetchData(`banners/${id}`, { method: 'DELETE' });
 if (result) {
-this.showNotification('谷xito', 'Banner eliminado correctamente', 'success');
+this.showNotification('\u00C9xito', 'Banner eliminado correctamente', 'success');
 await this.loadBanners();
 }
 } catch (error) {
@@ -1639,33 +1616,33 @@ this.showNotification('Error', error.message || 'Error al eliminar el banner', '
 
 async deleteNotification(id) {
 const confirmed = await this.showConfirmation(
-'Eliminar notificaci車n',
-'?Est芍s seguro de que quieres eliminar esta notificaci車n? Esta acci車n no se puede deshacer.'
+'Eliminar notificaci\u00F3n',
+'\u00BFEst\u00E1s seguro de que quieres eliminar esta notificaci\u00F3n? Esta acci\u00F3n no se puede deshacer.'
 );
 if (!confirmed) return;
 
 try {
 const result = await this.fetchData(`notifications/${id}`, { method: 'DELETE' });
 if (result) {
-this.showNotification('谷xito', 'Notificaci車n eliminada correctamente', 'success');
+this.showNotification('\u00C9xito', 'Notificaci\u00F3n eliminada correctamente', 'success');
 await this.loadNotifications();
 await this.loadNotificationStats();
 }
 } catch (error) {
-this.showNotification('Error', error.message || 'Error al eliminar la notificaci車n', 'error');
+this.showNotification('Error', error.message || 'Error al eliminar la notificaci\u00F3n', 'error');
 }
 }
 
-/* ========== Actualizar insignias y estad赤sticas ========== */
+/* ========== Actualizar insignias y estad\u00EDsticas ========== */
 async updateinsignias() {
 const confirmed = await this.showConfirmation(
 'Actualizar insignias',
-'?Est芍s seguro de que quieres actualizar autom芍ticamente todas las etiquetas de productos?\n\n' +
-'Esta acci車n aplicar芍 las reglas:\n' +
-'? 50+ likes ↙ Destacado\n' +
-'? 100+ likes ↙ M芍s Vendido\n' +
-'? 15 d赤as ↙ Quitar "Nuevo"\n\n' +
-'?Continuar?'
+'\u00BFEst\u00E1s seguro de que quieres actualizar autom\u00E1ticamente todas las etiquetas de productos?\n\n' +
+'Esta acci\u00F3n aplicar\u00E1 las reglas:\n' +
+'\u2022 50+ likes \u2192 Destacado\n' +
+'\u2022 100+ likes \u2192 M\u00E1s Vendido\n' +
+'\u2022 15 d\u00EDas \u2192 Quitar "Nuevo"\n\n' +
+'\u00BFContinuar?'
 );
 if (!confirmed) return;
 
@@ -1683,7 +1660,7 @@ const result = await this.fetchData('products/update-insignias', { method: 'POST
 if (result && result.success) {
 this.showNotification(
 'Insignias Actualizados',
-`Se actualizaron ${result.updatedProducts} productos.\nDestacados: ${result.stats.featured}\nM芍s Vendidos: ${result.stats.best_seller}\nNuevos: ${result.stats.new}`,
+`Se actualizaron ${result.updatedProducts} productos.\nDestacados: ${result.stats.featured}\nM\u00E1s Vendidos: ${result.stats.best_seller}\nNuevos: ${result.stats.new}`,
 'success'
 );
 await this.loadProducts();
@@ -1733,12 +1710,12 @@ statsContent.innerHTML = `
 <div class="stat-card">
 <i class="fas fa-fire" style="color: #3498db;"></i>
 <span class="stat-value">${stats.current.best_seller}</span>
-<span class="stat-label">M芍s Vendidos</span>
+<span class="stat-label">M\u00E1s Vendidos</span>
 </div>
 </div>
 
 <div class="stats-section">
-<h4><i class="fas fa-bullseye"></i> Puntuaci車n de Productos</h4>
+<h4><i class="fas fa-bullseye"></i> Puntuaci\u00F3n de Productos</h4>
 <div class="stats-grid">
 <div class="stat-card">
 <i class="fas fa-trophy" style="color: #f39c12;"></i>
@@ -1748,7 +1725,7 @@ statsContent.innerHTML = `
 <div class="stat-card">
 <i class="fas fa-crown" style="color: #9b59b6;"></i>
 <span class="stat-value">${stats.eligible.best_seller}</span>
-<span class="stat-label">M芍s Vendido (100+ likes)</span>
+<span class="stat-label">M\u00E1s Vendido (100+ likes)</span>
 </div>
 </div>
 </div>
@@ -1772,16 +1749,16 @@ statsContent.innerHTML = `
 ${stats.expired.new > 0 ? `
 <div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 8px; padding: 1rem; margin-top: 1rem;">
 <i class="fas fa-exclamation-triangle" style="color: #f39c12;"></i>
-<strong>Acci車n Recomendada:</strong> ${stats.expired.new} productos han excedido los 15 d赤as y deber赤an perder la etiqueta "Nuevo".
+<strong>Acci\u00F3n Recomendada:</strong> ${stats.expired.new} productos han excedido los 15 d\u00EDas y deber\u00EDan perder la etiqueta "Nuevo".
 </div>` : ''}
 `;
 } else {
-statsContent.innerHTML = '<p class="no-data">Error al cargar las estad赤sticas</p>';
+statsContent.innerHTML = '<p class="no-data">Error al cargar las estad\u00EDsticas</p>';
 }
 } catch (error) {
-console.error('Error al obtener estad赤sticas:', error);
+console.error('Error al obtener estad\u00EDsticas:', error);
 const statsContent = document.getElementById('statsContent');
-if (statsContent) statsContent.innerHTML = '<p class="no-data">Error al cargar las estad赤sticas</p>';
+if (statsContent) statsContent.innerHTML = '<p class="no-data">Error al cargar las estad\u00EDsticas</p>';
 }
 }
 }
