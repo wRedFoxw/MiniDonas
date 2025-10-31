@@ -1,1479 +1,1792 @@
-class ClientApp {
+// admin.js
+class AdminDashboard {
 constructor() {
-this.products = [];
-this.banners = [];
-this.settings = {};
-this.notifications = [];
-this.unreadCount = 0;
-this.deviceId = this.getDeviceId();
-this.votedProducts = this.getVotedProducts();
-this.notificationCheckInterval = null;
-this.realtimeConnection = null;
-this.isConnected = false;
-this.reconnectTimeout = null;
-this.currentBannerIndex = 0;
-this.bannerInterval = null;
-this.isNotificationsOpen = false;
-this.isOptionsOpen = false;
-this.isFloatingMenuOpen = false;
-this.isAnimatingFloatingMenu = false;
-this.isAnimatingOptionsMenu = false;
-this.isAnimatingNotificationsPanel = false;
-this.bannerStartX = 0;
-this.bannerCurrentX = 0;
-this.isBannerDragging = false;
-this.bannerTransitionEnabled = true;
-this.businessStatus = null;
-this.setupAppLifecycle();
+// estado
+this.currentProduct = null;
+this.currentBanner = null;
+this.currentNotification = null;
+this.productsLoaded = false;
+this.bannersLoaded = false;
+this.notificationsLoaded = false;
+this.hoursLoaded = false;
+
+// sonido de notificación
+this.notificationSound = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==');
+
+// cola de notificaciones in-app
+this.notificationQueue = [];
+this.isShowingNotification = false;
+this.notificationTimeouts = new Map(); // guarda rafIds, pause/resume funciones
+
 this.init();
 }
 
+/* ========== Inicialización ========== */
 async init() {
 try {
-this.applySystemTheme();
-this.showLoading(10);
-await this.cleanStorage();
-this.showLoading(30);
-await this.registerDevice();
-this.showLoading(50);
-await this.loadBusinessStatus();
-this.showLoading(70);
+this.showGlobalLoading(true);
+
 await Promise.all([
-this.loadBanners(),
 this.loadProducts(),
-this.loadNotifications()
+this.loadBusinessHours(),
+this.loadForcedState()
 ]);
-this.showLoading(90);
-await this.connectRealtime();
-this.showLoading(100);
+
 this.setupEventListeners();
-this.applyTheme();
-this.startNotificationPolling();
-this.startBannerRotation();
-this.setupOrientationDetection();
-
-setTimeout(() => {
-this.hideLoading();
-}, 500);
-
+this.setupSystemNotifications();
+this.requestNotificationPermission();
+this.setupSSE();
 } catch (error) {
-console.error('Error inicializando la aplicación:', error);
-this.showAlert('Error', 'No se pudo cargar la aplicación. Intenta recargar la página.');
+console.error('Error inicializando dashboard:', error);
+this.showNotification('Error', 'Error al inicializar el panel', 'error');
+} finally {
+this.showGlobalLoading(false);
 }
 }
 
-setupOrientationDetection() {
-this.checkOrientation();
+/* ========== Utilidades UI generales ========== */
+showGlobalLoading(show) {
+let loader = document.getElementById('globalLoader');
 
-window.addEventListener('resize', () => {
-this.checkOrientation();
-});
-
-window.addEventListener('orientationchange', () => {
-setTimeout(() => {
-this.checkOrientation();
-}, 300);
-});
-
-this.lockOrientation();
+if (show) {
+if (!loader) {
+loader = document.createElement('div');
+loader.id = 'globalLoader';
+loader.className = 'global-loader';
+loader.innerHTML = `
+<div class="loader-content">
+<div class="loader-spinner"></div>
+<p>Cargando panel de administración...</p>
+</div>
+`;
+document.body.appendChild(loader);
 }
-
-checkOrientation() {
-const orientationMessage = document.getElementById('orientationMessage');
-const appContent = document.querySelector('.app');
-if (!orientationMessage || !appContent) return;
-
-const isLandscape = window.innerWidth > window.innerHeight;
-const isTooWide = window.innerWidth > 480;
-
-// Mostrar mensaje si está en landscape Y el ancho es mayor a 480px
-// Esto fuerza el modo vertical en dispositivos móviles y tablets pequeñas
-if (isLandscape && isTooWide) {
-orientationMessage.style.display = 'flex';
-appContent.style.display = 'none';
-} else {
-orientationMessage.style.display = 'none';
-appContent.style.display = 'flex';
+loader.style.display = 'flex';
+} else if (loader) {
+loader.style.display = 'none';
 }
 }
 
-lockOrientation() {
-if (screen.orientation && screen.orientation.lock) {
-screen.orientation.lock('portrait').catch(error => {
-console.log('No se pudo bloquear la orientación:', error);
-});
-}
-}
-
-applySystemTheme() {
-document.body.classList.remove('light-mode', 'dark-mode');
-
-if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-document.body.classList.add('dark-mode');
-} else {
-document.body.classList.add('light-mode');
-}
-
-if (window.matchMedia) {
-window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
-const userTheme = localStorage.getItem('userTheme');
-if (!userTheme) {
-if (e.matches) {
-document.body.classList.remove('light-mode');
-document.body.classList.add('dark-mode');
-} else {
-document.body.classList.remove('dark-mode');
-document.body.classList.add('light-mode');
-}
-}
-});
-}
-}
-
-showLoading(progress) {
-const progressBar = document.querySelector('.progress-bar');
-const loadingStatus = document.getElementById('loadingStatus');
-
-if (progressBar) {
-progressBar.style.width = `${progress}%`;
-}
-
-if (loadingStatus) {
-const statuses = {
-10: 'Limpiando cache...',
-30: 'Registrando dispositivo...',
-50: 'Cargando configuración...',
-70: 'Cargando datos...',
-90: 'Conectando en tiempo real...',
-100: '¡Listo!'
-};
-loadingStatus.textContent = statuses[progress] || `Cargando... ${progress}%`;
-}
-}
-
-hideLoading() {
-const loading = document.getElementById('loading');
-const app = document.querySelector('.app');
-
-if (loading) {
-loading.style.opacity = '0';
-setTimeout(() => {
-loading.style.display = 'none';
-if (app) app.style.display = 'flex';
-}, 300);
-}
-}
-
-async cleanStorage() {
+async fetchData(endpoint, options = {}) {
 try {
-const keysToKeep = ['deviceId', 'votedProducts'];
-const allKeys = Object.keys(localStorage);
+const baseUrl = '/api/admin';
+const url = endpoint.startsWith('/') ? `${baseUrl}${endpoint}` : `${baseUrl}/${endpoint}`;
 
-for (const key of allKeys) {
-if (!keysToKeep.includes(key)) {
-localStorage.removeItem(key);
+const response = await fetch(url, {
+...options,
+headers: {
+'Content-Type': 'application/json',
+...options.headers
 }
-}
-
-if ('caches' in window) {
-const cacheNames = await caches.keys();
-await Promise.all(
-cacheNames.map(cacheName => caches.delete(cacheName))
-);
-}
-} catch (error) {
-console.error('Error limpiando storage:', error);
-}
-}
-
-sortProductsByinsignias(products) {
-return products.sort((a, b) => {
-const getProductWeight = (product) => {
-let weight = 0;
-if (product.is_new) weight += 1000;
-if (product.is_offer) weight += 100;
-if (product.is_best_seller) weight += 10;
-if (product.is_featured) weight += 1;
-weight += product.likes * 0.001;
-return weight;
-};
-const weightA = getProductWeight(a);
-const weightB = getProductWeight(b);
-return weightB - weightA;
 });
-}
 
-getDeviceId() {
-let deviceId = localStorage.getItem('deviceId');
-if (!deviceId) {
-deviceId = 'device_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-localStorage.setItem('deviceId', deviceId);
-}
-return deviceId;
-}
-
-getVotedProducts() {
-return JSON.parse(localStorage.getItem('votedProducts') || '{}');
-}
-
-setVotedProduct(productId, type) {
-this.votedProducts[productId] = type;
-localStorage.setItem('votedProducts', JSON.stringify(this.votedProducts));
-}
-
-async connectRealtime() {
-if (this.realtimeConnection) {
-this.realtimeConnection.close();
-this.realtimeConnection = null;
-}
-
+if (!response.ok) {
+const errorText = await response.text();
+let errorData;
 try {
-this.realtimeConnection = new EventSource('/api/realtime/events', {
-withCredentials: false
-});
-
-let reconnectAttempts = 0;
-const maxReconnectAttempts = 10;
-const baseReconnectDelay = 1000;
-
-this.realtimeConnection.onopen = () => {
-reconnectAttempts = 0;
-this.isConnected = true;
-this.updateConnectionStatus();
-console.log('Conexión SSE establecida');
-};
-
-this.realtimeConnection.onmessage = (event) => {
-try {
-if (event.data.trim() === ': heartbeat') {
-return;
+errorData = JSON.parse(errorText);
+} catch {
+errorData = { error: errorText || `Error ${response.status}: ${response.statusText}` };
+}
+throw new Error(errorData.error || `Error ${response.status}`);
 }
 
-const data = JSON.parse(event.data);
-this.handleRealtimeEvent(data.event, data.data);
-} catch (error) {
-console.error('Error procesando evento SSE:', error);
-}
-};
-
-this.realtimeConnection.onerror = (error) => {
-console.error('Error en conexión SSE:', error);
-this.isConnected = false;
-this.updateConnectionStatus();
-
-if (this.realtimeConnection.readyState === EventSource.CLOSED) {
-reconnectAttempts++;
-
-if (reconnectAttempts > maxReconnectAttempts) {
-console.error('Número máximo de reconexiones alcanzado');
-return;
-}
-
-const reconnectDelay = Math.min(
-baseReconnectDelay * Math.pow(2, reconnectAttempts - 1),
-30000
-);
-
-console.log(`Reconectando en ${reconnectDelay}ms (intento ${reconnectAttempts})`);
-
-setTimeout(() => {
-if (!this.isConnected) {
-this.connectRealtime();
-}
-}, reconnectDelay);
-}
-};
-
-} catch (error) {
-console.error('Error inicializando conexión SSE:', error);
-setTimeout(() => this.connectRealtime(), 5000);
-}
-}
-
-handleRealtimeEvent(event, data) {
-switch (event) {
-case 'connected':
-break;
-
-case 'products_updated':
-this.handleProductsUpdate(data);
-break;
-
-case 'new_notification':
-this.handleNewNotification(data.notification);
-break;
-
-case 'banners_updated':
-this.loadBanners();
-break;
-
-case 'business_status_updated':
-this.loadBusinessStatus();
-break;
-
-case 'business_hours_updated':
-this.loadBusinessStatus();
-break;
-}
-}
-
-async handleProductsUpdate(updateData) {
-const { action, product, productId } = updateData;
-
-switch (action) {
-case 'created':
-case 'updated':
-await this.loadProducts();
-this.showAlert('Éxito', `Producto ${action === 'created' ? 'agregado' : 'actualizado'}`);
-break;
-
-case 'deleted':
-this.products = this.products.filter(p => p.id !== productId);
-this.renderProducts();
-this.showAlert('Éxito', 'Producto eliminado');
-break;
-}
-}
-
-handleNewNotification(notification) {
-this.notifications.unshift({ ...notification, is_read: false });
-this.unreadCount++;
-this.updateNotificationBadge();
-
-this.showNotification(notification);
-this.playNotificationSound();
-this.requestNotificationPermission(notification);
-
-this.markAsRead(notification.id);
-}
-
-playNotificationSound() {
-try {
-const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF5fdJivrJBhNjVgodDbq2EcBj+Nq7qziFcqABVqo8bJpXZJAAAACER8jJund0EcAAAACDZidI+winAsAAAABi1QX4Wfl4E7AAAABRIjN2aHl5bGXgAAAAUaK0hqjJ2Z2EIAAAAGFBs2V3iXmNBNAAAABhUZMVB0kZbQTgAAAAYUFi9LbIeV0E4AAAAGEhUsRmiEktBOAAAABhIUK0NjgpHQTgAAAAYREilAXH6O0E4AAAAGDxAmPFh7jNBOAAAABg4OJDhUd4rQTgAAAAYNDCM1UnWI0E4AAAAGCwohMlBzhtBOAAAABgoJHjBOcYTQTgAAAAYJCB0uTG+B0E4AAAAGCAccLEptf9BOAAAABgcGGipIan3QTgAAAAYGBRgpSGh80E4AAAAGBQQWJ0Zme9BOAAAABgQDFCVFZHrQTgAAAAYDARIlRGN50E4AAAAGAgAQJENieNBOAAAABgL/DiNCYXfQTgAAAAYC/g0iQWB20E4AAAAGAv0MIkBfddBOAAAABgL8CyE/XnTQTgAAAAYC+wogPl1z0E4AAAAGAvkJHz1cctBOAAAABgL4CB48W3HQTgAAAAYC9wcdO1pw0E4AAAAGAvYGHjpZb9BOAAAABgL1BR05WG7QTgAAAAYC9AQcOFdt0E4AAAAGAvMDGzdWbNBOAAAABgLyAhk2VWvQTgAAAAYC8QEYNVRq0E4AAAAGAvAAFjRTadBOAAAABgLv/xUzUmnQTgAAAAYC7v4UMlFo0E4AAAAGAu39EzFQZ9BOAAAABgLs/BMwT2bQTgAAAAYC6/sSL05l0E4AAAAGAur6ES5NZNBOAAAABgLp+RAuTGPQTgAAAAYC6PgPLUtj0E4AAAAGAuf3Di1KYtBOAAAABgLm9g0sSmHQTgAAAAYC5fUMLElg0E4AAAAGA+T0CyxIX9BOAAAABgPj8worSF7QTgAAAAYC4vMJK0dd0E4AAAAGAuHxCCtGXNBOAAAABgLg8AcrRVvQTgAAAAYC3/AFK0Ra0E4AAAAGAt7vBitDWdBOAAAABgLd7gUrQljQTgAAAAYC3O0EK0FX0E4AAAAGAtvsAytAVtBOAAAABgLa6wIrP1XQTgAAAAYC2eoBKz5U0E4AAAABgLX6P8qPFLQTgAAAAYC1uf+KjtR0E4AAAAGAtXm/So6UNBOAAAABgLU5fwqOVDQTgAAAAYC0+X7KjhP0E4AAAAGAtLl+io3TtBOAAAABgLR5PkqNk3QTgAAAAYC0OT4KjVM0E4AAAAGAs/k9yo0S9BOAAAABgLO4/YqM0rQTgAAAAY');
-audio.volume = 0.3;
-audio.play().catch(e => console.log('No se pudo reproducir sonido:', e));
-} catch (error) {
-console.error('Error reproduciendo sonido:', error);
-}
-}
-
-async requestNotificationPermission(notification) {
-if (!('Notification' in window)) return;
-
-if (Notification.permission === 'granted') {
-this.showSystemNotification(notification);
-} else if (Notification.permission === 'default') {
-const permission = await Notification.requestPermission();
-if (permission === 'granted') {
-this.showSystemNotification(notification);
-}
-}
-}
-
-showSystemNotification(notification) {
-if (!('Notification' in window)) return;
-
-const options = {
-body: notification.message,
-icon: '/client/icon-192.png',
-badge: '/client/icon-192.png',
-tag: 'webapp-notification'
-};
-
-try {
-const systemNotification = new Notification(notification.title, options);
-
-systemNotification.onclick = () => {
-window.focus();
-systemNotification.close();
-};
-
-setTimeout(() => systemNotification.close(), 5000);
-} catch (error) {
-console.error('Error mostrando notificación del sistema:', error);
-}
-}
-
-updateConnectionStatus() {
-let statusElement = document.querySelector('.connection-status');
-
-if (!statusElement) {
-statusElement = document.createElement('div');
-statusElement.className = 'connection-status';
-document.body.appendChild(statusElement);
-}
-
-if (this.isConnected) {
-statusElement.innerHTML = '<i class="fas fa-wifi"></i> Conectado';
-statusElement.className = 'connection-status connected';
-} else {
-statusElement.innerHTML = '<i class="fas fa-wifi-slash"></i> Reconectando...';
-statusElement.className = 'connection-status disconnected';
-}
-}
-
-setupAppLifecycle() {
-window.addEventListener('beforeunload', () => {
-if (this.realtimeConnection) {
-this.realtimeConnection.close();
-}
-if (this.bannerInterval) {
-clearInterval(this.bannerInterval);
-}
-});
-
-document.addEventListener('visibilitychange', () => {
-if (document.hidden) {
-console.log('Página oculta');
-} else {
-if (!this.isConnected && this.realtimeConnection?.readyState === EventSource.CLOSED) {
-console.log('Reconectando SSE tras volver a la página');
-this.connectRealtime();
-}
-}
-});
-
-window.addEventListener('online', () => {
-console.log('Conexión de red restaurada');
-if (!this.isConnected) {
-this.connectRealtime();
-}
-});
-
-window.addEventListener('offline', () => {
-console.log('Conexión de net perdida');
-this.isConnected = false;
-this.updateConnectionStatus();
-});
-}
-
-async fetchData(endpoint) {
-try {
-const response = await fetch(`/api/client/${endpoint}`);
-if (!response.ok) throw new Error(`HTTP ${response.status}`);
 return await response.json();
 } catch (error) {
-console.error(`Error fetching ${endpoint}:`, error);
+console.error('Error fetching data:', error);
+this.showNotification('Error', error.message || 'Error al cargar datos', 'error');
 return null;
 }
 }
 
-async registerDevice() {
-try {
-await fetch('/api/client/register-device', {
-method: 'POST',
-headers: {
-'Content-Type': 'application/json'
-},
-body: JSON.stringify({
-device_id: this.deviceId,
-user_agent: navigator.userAgent
-})
-});
-} catch (error) {
-console.error('Error al registrar dispositivo:', error);
+setLoadingState(elementId, isLoading) {
+const element = document.getElementById(elementId);
+if (!element) return;
+if (isLoading) {
+element.classList.add('loading');
+if (!element.querySelector('.loading-spinner')) {
+const spinner = document.createElement('div');
+spinner.className = 'loading-spinner';
+spinner.style.margin = '2rem auto';
+element.appendChild(spinner);
 }
-}
-
-async loadBusinessStatus() {
-try {
-const status = await this.fetchData('business-status');
-this.businessStatus = status;
-this.updateBusinessStatusDisplay();
-} catch (error) {
-console.error('Error al cargar estado del establecimiento:', error);
-// Estado por defecto si hay error
-this.businessStatus = {
-is_open: true,
-is_forced: false,
-message: 'Abierto'
-};
-}
-}
-
-updateBusinessStatusDisplay() {
-const productsContainer = document.getElementById('productsContainer');
-if (!productsContainer) return;
-
-if (!this.businessStatus.is_open) {
-productsContainer.innerHTML = `
-<div class="business-closed-message">
-<div class="closed-icon">
-<i class="fas fa-door-closed"></i>
-</div>
-<h3>Estamos Cerrados</h3>
-<!--p>${this.businessStatus.message}</p-->
-${this.businessStatus.next_open_day ? `
-<div class="next-opening">
-<strong>Próxima apertura:</strong><br>
-${this.businessStatus.next_open_day.day_name} a las ${this.businessStatus.next_open_day.open_time}
-</div>
-` : ''}
-${this.businessStatus.next_open_time ? `
-<div class="next-opening">
-<strong>Abrimos a las:</strong><br>
-${this.businessStatus.next_open_time}
-</div>
-` : ''}
-</div>
-`;
 } else {
-this.renderProducts();
+element.classList.remove('loading');
+const spinner = element.querySelector('.loading-spinner');
+if (spinner) spinner.remove();
 }
 }
 
-async loadSettings() {
-this.settings = await this.fetchData('settings');
-if (this.settings && this.settings.logo_data) {
-document.getElementById('logoImage').src = this.settings.logo_data;
+/* ========== Cargas iniciales ========== */
+async loadProducts() {
+try {
+this.setLoadingState('productsList', true);
+const products = await this.fetchData('products');
+if (products) this.renderProducts(products);
+} finally {
+this.setLoadingState('productsList', false);
 }
-this.applyTheme();
 }
 
 async loadBanners() {
-this.banners = await this.fetchData('banners');
-this.renderBanners();
+try {
+this.setLoadingState('bannersList', true);
+const banners = await this.fetchData('banners');
+if (banners) this.renderBanners(banners);
+} finally {
+this.setLoadingState('bannersList', false);
+}
 }
 
-async loadProducts() {
-this.products = await this.fetchData('products');
+async loadBusinessHours() {
+try {
+this.setLoadingState('businessHoursList', true);
+const hours = await this.fetchData('business-hours');
+if (hours) this.renderBusinessHours(hours);
+await this.loadCurrentStatus();
+} finally {
+this.setLoadingState('businessHoursList', false);
+}
+}
+
+async loadForcedState() {
+try {
+const forcedState = await this.fetchData('business-forced-state');
+if (forcedState) this.renderForcedState(forcedState);
+} catch (error) {
+console.error('Error loading forced state:', error);
+}
+}
+
+async loadCurrentStatus() {
+try {
+const status = await this.fetchData('business-status');
+if (status) this.renderCurrentStatus(status);
+} catch (error) {
+console.error('Error loading current status:', error);
+}
 }
 
 async loadNotifications() {
 try {
-const response = await fetch(`/api/client/notifications?device_id=${this.deviceId}`);
-if (response.ok) {
-this.notifications = await response.json();
-await this.getUnreadCount();
-}
+this.setLoadingState('notificationsList', true);
+const notifications = await this.fetchData('notifications');
+if (notifications) this.renderNotifications(notifications);
 } catch (error) {
-console.error('Error al cargar notificaciones:', error);
+console.error('Error loading notifications data:', error);
+} finally {
+this.setLoadingState('notificationsList', false);
 }
 }
 
-async getUnreadCount() {
+async loadNotificationStats() {
 try {
-const response = await fetch(`/api/client/notifications/unread-count?device_id=${this.deviceId}`);
-if (response.ok) {
-const data = await response.json();
-this.unreadCount = data.count;
-this.updateNotificationBadge();
+const stats = await this.fetchData('notifications/stats');
+if (stats) {
+document.getElementById('totalNotifications').textContent = stats.total;
+document.getElementById('sentNotifications').textContent = stats.sent;
+document.getElementById('totalDevices').textContent = stats.devices;
 }
 } catch (error) {
-console.error('Error al obtener contador de no leídas:', error);
+console.error('Error loading notification stats:', error);
 }
 }
 
-updateNotificationBadge() {
-const notificationBtn = document.getElementById('notificationsBtn');
-if (!notificationBtn) return;
-
-const existingBadge = notificationBtn.querySelector('.notification-badge');
-
-if (this.unreadCount > 0) {
-if (!existingBadge) {
-const badge = document.createElement('span');
-badge.className = 'notification-badge';
-badge.textContent = this.unreadCount > 99 ? '99+' : this.unreadCount;
-notificationBtn.appendChild(badge);
-} else {
-existingBadge.textContent = this.unreadCount > 99 ? '99+' : this.unreadCount;
-}
-} else if (existingBadge) {
-existingBadge.remove();
-}
-}
-
-applyTheme() {
-if (this.settings && this.settings.theme_color) {
-document.querySelector('meta[name="theme-color"]').setAttribute('content', this.settings.theme_color);
-}
-}
-
-renderBanners() {
-const bannerContainer = document.getElementById('banner');
-if (!bannerContainer) return;
-
-bannerContainer.innerHTML = '';
-
-if (!this.banners || this.banners.length === 0) {
-const defaultBanner = document.createElement('div');
-defaultBanner.className = 'banner-default';
-defaultBanner.innerHTML = `
-<div class="banner-placeholder">
-<i class="fas fa-image"></i>
-<p>No hay banners disponibles</p>
-</div>
-`;
-bannerContainer.appendChild(defaultBanner);
-return;
-}
-
-const bannersWrapper = document.createElement('div');
-bannersWrapper.className = 'banners-wrapper';
-
-this.banners.forEach((banner, index) => {
-const bannerElement = document.createElement('div');
-bannerElement.className = `banner-slide ${index === 0 ? 'active' : ''}`;
-bannerElement.innerHTML = `
-<div class="banner-image-container">
-<img src="${banner.image_data}" alt="${banner.title || 'Banner'}" 
-onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'">
-<div class="banner-placeholder" style="display: ${banner.image_data ? 'none' : 'flex'}">
-<i class="fas fa-image"></i>
-<p>Imagen no disponible</p>
-</div>
-</div>
-${banner.title || banner.subtitle ? `
-<div class="banner-content">
-${banner.title ? `<h3 class="banner-title">${banner.title}</h3>` : ''}
-${banner.subtitle ? `<p class="banner-subtitle">${banner.subtitle}</p>` : ''}
-</div>
-` : ''}
-`;
-bannersWrapper.appendChild(bannerElement);
-});
-
-if (this.banners.length > 1) {
-const prevBtn = document.createElement('button');
-prevBtn.className = 'banner-nav banner-prev';
-prevBtn.innerHTML = '<i class="fas fa-chevron-left"></i>';
-prevBtn.addEventListener('click', () => this.prevBanner());
-
-const nextBtn = document.createElement('button');
-nextBtn.className = 'banner-nav banner-next';
-nextBtn.innerHTML = '<i class="fas fa-chevron-right"></i>';
-nextBtn.addEventListener('click', () => this.nextBanner());
-
-const dotsContainer = document.createElement('div');
-dotsContainer.className = 'banner-dots';
-
-this.banners.forEach((_, index) => {
-const dot = document.createElement('button');
-dot.className = `banner-dot ${index === 0 ? 'active' : ''}`;
-dot.addEventListener('click', () => this.goToBanner(index));
-dotsContainer.appendChild(dot);
-});
-
-bannerContainer.appendChild(bannersWrapper);
-bannerContainer.appendChild(prevBtn);
-bannerContainer.appendChild(nextBtn);
-bannerContainer.appendChild(dotsContainer);
-
-this.setupBannerTouch(bannersWrapper);
-} else {
-bannerContainer.appendChild(bannersWrapper);
-}
-}
-
-setupBannerTouch(bannersWrapper) {
-const onTouchStart = (e) => {
-this.bannerStartX = e.touches[0].clientX;
-this.bannerCurrentX = this.bannerStartX;
-this.isBannerDragging = true;
-this.bannerTransitionEnabled = false;
-bannersWrapper.style.transition = 'none';
-this.pauseBannerRotation();
-};
-
-const onTouchMove = (e) => {
-if (!this.isBannerDragging) return;
-this.bannerCurrentX = e.touches[0].clientX;
-const diff = this.bannerCurrentX - this.bannerStartX;
-const currentPosition = -this.currentBannerIndex * 100;
-const newPosition = currentPosition + (diff / bannersWrapper.offsetWidth) * 100;
-
-bannersWrapper.style.transform = `translateX(${newPosition}%)`;
-};
-
-const onTouchEnd = (e) => {
-if (!this.isBannerDragging) return;
-this.isBannerDragging = false;
-this.bannerTransitionEnabled = true;
-bannersWrapper.style.transition = 'transform 0.3s ease';
-
-const diff = this.bannerCurrentX - this.bannerStartX;
-const threshold = bannersWrapper.offsetWidth * 0.1;
-
-if (Math.abs(diff) > threshold) {
-if (diff > 0) {
-this.prevBanner();
-} else {
-this.nextBanner();
-}
-} else {
-this.goToBanner(this.currentBannerIndex);
-}
-
-this.resumeBannerRotation();
-};
-
-bannersWrapper.addEventListener('touchstart', onTouchStart);
-bannersWrapper.addEventListener('touchmove', onTouchMove);
-bannersWrapper.addEventListener('touchend', onTouchEnd);
-}
-
-pauseBannerRotation() {
-if (this.bannerInterval) {
-clearInterval(this.bannerInterval);
-this.bannerInterval = null;
-}
-}
-
-resumeBannerRotation() {
-if (this.banners && this.banners.length > 1 && !this.bannerInterval) {
-setTimeout(() => {
-this.startBannerRotation();
-}, 5000);
-}
-}
-
-nextBanner() {
-this.currentBannerIndex = (this.currentBannerIndex + 1) % this.banners.length;
-this.updateBannerDisplay();
-}
-
-prevBanner() {
-this.currentBannerIndex = (this.currentBannerIndex - 1 + this.banners.length) % this.banners.length;
-this.updateBannerDisplay();
-}
-
-goToBanner(index) {
-this.currentBannerIndex = index;
-this.updateBannerDisplay();
-}
-
-updateBannerDisplay() {
-const bannersWrapper = document.querySelector('.banners-wrapper');
-const slides = document.querySelectorAll('.banner-slide');
-const dots = document.querySelectorAll('.banner-dot');
-
-if (bannersWrapper && this.bannerTransitionEnabled) {
-bannersWrapper.style.transform = `translateX(-${this.currentBannerIndex * 100}%)`;
-}
-
-slides.forEach((slide, index) => {
-slide.classList.toggle('active', index === this.currentBannerIndex);
-});
-
-dots.forEach((dot, index) => {
-dot.classList.toggle('active', index === this.currentBannerIndex);
-});
-}
-
-startBannerRotation() {
-if (this.bannerInterval) {
-clearInterval(this.bannerInterval);
-}
-
-if (this.banners && this.banners.length > 1) {
-this.bannerInterval = setInterval(() => {
-this.nextBanner();
-}, 5000);
-}
-}
-
-renderProducts() {
-const container = document.getElementById('productsContainer');
+/* ========== Renderizado (productos/banners/horarios/notificaciones) ========== */
+renderProducts(products) {
+const container = document.getElementById('productsList');
 if (!container) return;
-if (this.businessStatus && !this.businessStatus.is_open) {
-return;
-}
-
 container.innerHTML = '';
-if (!this.products || this.products.length === 0) {
-container.innerHTML = '<div class="no-products">No hay productos disponibles</div>';
+if (products.length === 0) {
+container.innerHTML = '<p class="no-data">No hay productos creados</p>';
 return;
 }
-const sortedProducts = this.sortProductsByinsignias(this.products);
-sortedProducts.forEach(product => {
+products.forEach(product => {
 const productElement = this.createProductElement(product);
 container.appendChild(productElement);
 });
 }
 
+renderBanners(banners) {
+const container = document.getElementById('bannersList');
+if (!container) return;
+container.innerHTML = '';
+if (banners.length === 0) {
+container.innerHTML = '<p class="no-data">No hay banners creados</p>';
+return;
+}
+banners.forEach(banner => {
+const bannerElement = this.createBannerElement(banner);
+container.appendChild(bannerElement);
+});
+}
+
+renderBusinessHours(hours) {
+const container = document.getElementById('businessHoursList');
+if (!container) return;
+container.innerHTML = '';
+hours.forEach(hour => {
+const hourElement = this.createBusinessHourElement(hour);
+container.appendChild(hourElement);
+});
+}
+
+renderForcedState(forcedState) {
+const toggle = document.getElementById('enableForcedState');
+if (toggle) toggle.checked = forcedState.is_forced;
+
+const openBtn = document.querySelector('[data-value="open"]');
+const closedBtn = document.querySelector('[data-value="closed"]');
+if (forcedState.forced_state) {
+openBtn.classList.add('active');
+closedBtn.classList.remove('active');
+} else {
+openBtn.classList.remove('active');
+closedBtn.classList.add('active');
+}
+
+if (forcedState.forced_until) {
+const localDateTime = new Date(forcedState.forced_until).toISOString().slice(0, 16);
+const forcedUntilInput = document.getElementById('forcedUntil');
+if (forcedUntilInput) forcedUntilInput.value = localDateTime;
+}
+}
+
+renderCurrentStatus(status) {
+const container = document.getElementById('currentStatus');
+if (!container) return;
+
+let statusClass = 'status-closed';
+if (status.is_open) {
+statusClass = status.is_forced ? 'status-forced' : 'status-open';
+}
+
+container.innerHTML = `
+<div class="${statusClass}">
+<div class="status-item">
+<span class="status-label">Estado:</span>
+<span class="status-value">${status.is_open ? '🟢 ABIERTO' : '🔴 CERRADO'}</span>
+${status.is_forced ? ' <small>(Forzado)</small>' : ''}
+</div>
+${status.closing_time ? `
+<div class="status-item">
+<span class="status-label">Cierra a las:</span>
+<span class="status-value">${status.closing_time}</span>
+</div>` : ''}
+${status.next_open_time ? `
+<div class="status-item">
+<span class="status-label">Abre a las:</span>
+<span class="status-value">${status.next_open_time}</span>
+</div>` : ''}
+${status.next_open_day ? `
+<div class="status-item">
+<span class="status-label">Próxima apertura:</span>
+<span class="status-value">${status.next_open_day.day_name} a las ${status.next_open_day.open_time}</span>
+</div>` : ''}
+<div class="status-message">${status.message}</div>
+</div>
+`;
+}
+
+renderNotifications(notifications) {
+const container = document.getElementById('notificationsList');
+if (!container) return;
+container.innerHTML = '';
+if (notifications.length === 0) {
+container.innerHTML = '<p class="no-data">No hay notificaciones creadas</p>';
+return;
+}
+notifications.forEach(notification => {
+const notificationElement = this.createNotificationElement(notification);
+container.appendChild(notificationElement);
+});
+}
+
+/* ========== Creación de elementos UI ========== */
 createProductElement(product) {
-const productCard = document.createElement('div');
-productCard.className = 'product-card';
+const div = document.createElement('div');
+div.className = `product-item ${!product.is_active ? 'product-inactive' : ''}`;
 
-const insignias = this.generateinsignias(product);
-const hasVoted = this.votedProducts[product.id];
-const likeClass = hasVoted === 'like' ? 'active' : '';
-const dislikeClass = hasVoted === 'dislike' ? 'active' : '';
+const insignias = [];
+if (product.is_new) insignias.push('Nuevo');
+if (product.is_offer) insignias.push('Oferta');
+if (product.is_featured) insignias.push('Destacado');
+if (product.is_best_seller) insignias.push('Más Vendido');
 
-productCard.innerHTML = `
-<div class="product-name">${product.name}</div>
-<img class="product-image" src="${product.image_data}" alt="${product.name}" 
-onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjEyMCIgdmlld0JveD0iMCAwIDIwMCAxMjAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMTIwIiBmaWxsPSIjZTVlNWU1Ii8+Cjx0ZXh0IHg9IjEwMCIgeT0iNjAiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZG9taW5hbnQtYmFzZWxpbmU9Im1pZGRsZSI+RWwgZW1wcmVzYSBubyBwdWRvIGNhcmdhciBlc3RhIGltYWdlbjwvdGV4dD4KPC9zdmc+'">
+div.innerHTML = `
 <div class="product-info">
-<div class="product-insignias">${insignias}</div>
-<div class="product-content">
-<div class="product-votes">
-<button class="vote-button like ${likeClass}" data-product-id="${product.id}">
-<i class="fas fa-thumbs-up"></i> ${product.likes}
-</button>
-<button class="vote-button dislike ${dislikeClass}" data-product-id="${product.id}">
-<i class="fas fa-thumbs-down"></i> ${product.dislikes}
-</button>
+<h4>${this.escapeHtml(product.name)}</h4>
+<p>$${product.price} | <i class="fas fa-thumbs-up"></i> ${product.likes} | <i class="fas fa-thumbs-down"></i> ${product.dislikes}</p>
+<p><small>${insignias.join(', ') || 'Sin etiquetas'}</small></p>
+<p><small><i class="fas fa-eye"></i> Estado: ${product.is_active ? 'Activo' : 'Inactivo'}</small></p>
 </div>
-<div class="product-price">$ ${product.price}</div>
-</div>
+<div class="product-actions">
+<button class="btn-edit" data-id="${product.id}"><i class="fas fa-edit"></i> Editar</button>
+<button class="btn-delete" data-id="${product.id}"><i class="fas fa-trash"></i> Eliminar</button>
 </div>
 `;
 
-productCard.querySelector('.like').addEventListener('click', (e) => {
-this.handleVote(e.target.closest('.vote-button').dataset.productId, 'like');
+div.querySelector('.btn-edit').addEventListener('click', (e) => {
+this.editProduct(e.target.closest('.btn-edit').dataset.id);
 });
 
-productCard.querySelector('.dislike').addEventListener('click', (e) => {
-this.handleVote(e.target.closest('.vote-button').dataset.productId, 'dislike');
+div.querySelector('.btn-delete').addEventListener('click', (e) => {
+this.deleteProduct(e.target.closest('.btn-delete').dataset.id);
 });
 
-return productCard;
+return div;
 }
 
-generateinsignias(product) {
-const insignias = [
-{ key: 'is_new', label: 'Nuevo', class: 'new' },
-{ key: 'is_offer', label: 'Oferta', class: 'offer' },
-{ key: 'is_featured', label: 'Destacado', class: 'featured' },
-{ key: 'is_best_seller', label: 'Más Vendido', class: 'best-seller' }
-];
+createBannerElement(banner) {
+const div = document.createElement('div');
+div.className = `banner-item ${!banner.is_active ? 'banner-inactive' : ''}`;
 
-return insignias.map(badge => {
-const isActive = product[badge.key];
-return `<span class="badge ${badge.class} ${isActive ? 'active' : 'inactive'}">${badge.label}</span>`;
-}).join('');
+div.innerHTML = `
+<div class="banner-info">
+<h4>${this.escapeHtml(banner.title || 'Sin título')}</h4>
+<p>${this.escapeHtml(banner.subtitle || '')}</p>
+<p><small><i class="fas fa-eye"></i> Estado: ${banner.is_active ? 'Activo' : 'Inactivo'}</small></p>
+</div>
+<div class="banner-actions">
+<button class="btn-edit" data-id="${banner.id}"><i class="fas fa-edit"></i> Editar</button>
+<button class="btn-delete" data-id="${banner.id}"><i class="fas fa-trash"></i> Eliminar</button>
+</div>
+`;
+
+div.querySelector('.btn-edit').addEventListener('click', (e) => {
+this.editBanner(e.target.closest('.btn-edit').dataset.id);
+});
+
+div.querySelector('.btn-delete').addEventListener('click', (e) => {
+this.deleteBanner(e.target.closest('.btn-delete').dataset.id);
+});
+
+return div;
 }
 
-async handleVote(productId, type) {
-if (this.votedProducts[productId]) {
-this.showAlert('Aviso', 'Ya has votado por este producto');
+createBusinessHourElement(hour) {
+const div = document.createElement('div');
+div.className = 'business-hour-item';
+
+const openTime12 = hour.open_time ? this.formatTimeTo12h(hour.open_time) : '';
+const closeTime12 = hour.close_time ? this.formatTimeTo12h(hour.close_time) : '';
+
+div.innerHTML = `
+<div class="business-hour-day">
+<strong>${hour.day_name}</strong>
+</div>
+<div class="business-hour-times">
+<div class="time-input-group">
+<label>Apertura:</label>
+<input type="text" class="open-time time-12h-input" value="${openTime12}" placeholder="9:00 AM" ${hour.is_closed ? 'disabled' : ''}>
+</div>
+<div class="time-input-group">
+<label>Cierre:</label>
+<input type="text" class="close-time time-12h-input" value="${closeTime12}" placeholder="6:00 PM" ${hour.is_closed ? 'disabled' : ''}>
+</div>
+</div>
+<div class="business-hour-checkbox">
+<label>
+<input type="checkbox" class="is-closed" ${hour.is_closed ? 'checked' : ''}>
+<span class="checkbox-label">Cerrado este día</span>
+</label>
+</div>
+`;
+
+const openTimeInput = div.querySelector('.open-time');
+const closeTimeInput = div.querySelector('.close-time');
+const isClosedCheckbox = div.querySelector('.is-closed');
+
+isClosedCheckbox.addEventListener('change', () => {
+openTimeInput.disabled = isClosedCheckbox.checked;
+closeTimeInput.disabled = isClosedCheckbox.checked;
+});
+
+return div;
+}
+
+createNotificationElement(notification) {
+const div = document.createElement('div');
+div.className = 'notification-item';
+
+const typeLabels = {
+'info': 'Información',
+'success': 'Éxito',
+'warning': 'Advertencia',
+'error': 'Error',
+'promo': 'Promoción'
+};
+
+const sendDate = new Date(notification.send_at).toLocaleString('es-CU');
+const createdDate = new Date(notification.created_at).toLocaleString('es-CU');
+
+div.innerHTML = `
+<div class="notification-header">
+<h4 class="notification-title">${this.escapeHtml(notification.title)}</h4>
+<span class="notification-type ${notification.type}">${typeLabels[notification.type]}</span>
+</div>
+<div class="notification-message">${this.escapeHtml(notification.message)}</div>
+<div class="notification-meta">
+<span><i class="fas fa-clock"></i> Creada: ${createdDate}</span>
+<span><i class="fas fa-paper-plane"></i> Enviada: ${sendDate}</span>
+</div>
+<div class="notification-meta">
+<span>Estado: ${notification.is_sent ? 'Enviada' : 'Pendiente'}</span>
+</div>
+<div class="notification-actions">
+<button class="btn-edit" data-id="${notification.id}"><i class="fas fa-edit"></i> Editar</button>
+${!notification.is_sent ? `<button class="btn-success send-now" data-id="${notification.id}"><i class="fas fa-paper-plane"></i> Enviar</button>` : ''}
+<button class="btn-delete" data-id="${notification.id}"><i class="fas fa-trash"></i> Eliminar</button>
+</div>
+`;
+
+div.querySelector('.btn-edit').addEventListener('click', (e) => {
+this.editNotification(e.target.closest('.btn-edit').dataset.id);
+});
+
+const sendBtn = div.querySelector('.send-now');
+if (sendBtn) {
+sendBtn.addEventListener('click', (e) => {
+this.sendNotification(e.target.closest('.send-now').dataset.id);
+});
+}
+
+div.querySelector('.btn-delete').addEventListener('click', (e) => {
+this.deleteNotification(e.target.closest('.btn-delete').dataset.id);
+});
+
+return div;
+}
+
+/* ========== Formatos de hora ========== */
+formatTimeTo12h(time24) {
+if (!time24) return '';
+const [hours, minutes] = time24.split(':');
+const hour = parseInt(hours, 10);
+const ampm = hour >= 12 ? 'PM' : 'AM';
+const hour12 = hour % 12 || 12;
+return `${hour12}:${minutes} ${ampm}`;
+}
+
+formatTimeTo24h(time12) {
+if (!time12) return '';
+const [time, ampm] = time12.split(' ');
+let [hours, minutes] = time.split(':');
+let hour = parseInt(hours, 10);
+if (ampm === 'PM' && hour < 12) hour += 12;
+if (ampm === 'AM' && hour === 12) hour = 0;
+return `${hour.toString().padStart(2, '0')}:${minutes}`;
+}
+
+/* ========== Guardado / Envios ========== */
+async saveBusinessHours() {
+const hoursItems = document.querySelectorAll('.business-hour-item');
+const hours = [];
+
+hoursItems.forEach(item => {
+const dayName = item.querySelector('.business-hour-day strong').textContent;
+const openTime = item.querySelector('.open-time').value;
+const closeTime = item.querySelector('.close-time').value;
+const isClosed = item.querySelector('.is-closed').checked;
+
+const dayMap = {
+'Domingo': 0, 'Lunes': 1, 'Martes': 2, 'Miércoles': 3,
+'Jueves': 4, 'Viernes': 5, 'Sábado': 6
+};
+
+hours.push({
+day_of_week: dayMap[dayName],
+open_time: openTime ? this.formatTimeTo24h(openTime) : null,
+close_time: closeTime ? this.formatTimeTo24h(closeTime) : null,
+is_closed: isClosed
+});
+});
+
+const saveButton = document.getElementById('saveBusinessHours');
+const originalText = saveButton.innerHTML;
+
+saveButton.innerHTML = '<div class="loading-spinner"></div> Guardando...';
+saveButton.classList.add('btn-loading');
+saveButton.disabled = true;
+
+try {
+const result = await this.fetchData('business-hours', {
+method: 'PUT',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({ hours })
+});
+
+if (result && result.success) {
+this.showNotification('Éxito', 'Horarios guardados correctamente', 'success');
+await this.loadCurrentStatus();
+}
+} catch (error) {
+this.showNotification('Error', error.message || 'Error al guardar horarios', 'error');
+} finally {
+saveButton.innerHTML = originalText;
+saveButton.classList.remove('btn-loading');
+saveButton.disabled = false;
+}
+}
+
+async saveForcedState() {
+const isForced = document.getElementById('enableForcedState').checked;
+const forcedState = document.querySelector('.state-action-btn.active')?.dataset.value === 'open';
+const forcedUntil = document.getElementById('forcedUntil').value;
+
+if (isForced && !forcedUntil) {
+this.showNotification('Error', 'Debes especificar hasta cuándo aplicar el estado forzado', 'error');
 return;
 }
 
+const saveButton = document.getElementById('saveForcedState');
+const originalText = saveButton.innerHTML;
+
+saveButton.innerHTML = '<div class="loading-spinner"></div> Guardando...';
+saveButton.classList.add('btn-loading');
+saveButton.disabled = true;
+
 try {
-const response = await fetch('/api/client/vote', {
-method: 'POST',
-headers: {
-'Content-Type': 'application/json'
-},
+const result = await this.fetchData('business-forced-state', {
+method: 'PUT',
+headers: { 'Content-Type': 'application/json' },
 body: JSON.stringify({
-productId,
-type,
-deviceId: this.deviceId
+is_forced: isForced,
+forced_state: forcedState,
+forced_until: forcedUntil
 })
 });
 
-const result = await response.json();
-
-if (result.success) {
-this.setVotedProduct(productId, type);
-await this.loadProducts();
-} else {
-this.showAlert('Error', result.error);
+if (result && result.success) {
+this.showNotification('Éxito', 'Estado forzado guardado correctamente', 'success');
+await this.loadCurrentStatus();
 }
 } catch (error) {
-console.error('Error voting:', error);
-this.showAlert('Error', 'Error al registrar el voto');
+this.showNotification('Error', error.message || 'Error al guardar estado forzado', 'error');
+} finally {
+saveButton.innerHTML = originalText;
+saveButton.classList.remove('btn-loading');
+saveButton.disabled = false;
 }
 }
 
-showNotification(notification) {
+/* ========== Event listeners y navegación ========== */
+setupEventListeners() {
+// Navegación entre pestañas
+document.querySelectorAll('.nav-btn').forEach(btn => {
+btn.addEventListener('click', (e) => {
+document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+e.currentTarget.classList.add('active');
+const tabId = `${e.currentTarget.dataset.tab}-tab`;
+const panel = document.getElementById(tabId);
+if (panel) panel.classList.add('active');
+this.loadTabData(e.currentTarget.dataset.tab);
+});
+});
+
+// Productos
+const addProductBtn = document.getElementById('addProductBtn');
+if (addProductBtn) addProductBtn.addEventListener('click', () => this.openProductModal());
+
+const productForm = document.getElementById('productForm');
+if (productForm) productForm.addEventListener('submit', (e) => {
+e.preventDefault();
+this.saveProduct();
+});
+
+// Banners
+const addBannerBtn = document.getElementById('addBannerBtn');
+if (addBannerBtn) addBannerBtn.addEventListener('click', () => this.openBannerModal());
+
+const bannerForm = document.getElementById('bannerForm');
+if (bannerForm) bannerForm.addEventListener('submit', (e) => {
+e.preventDefault();
+this.saveBanner();
+});
+
+// Notificaciones
+const addNotificationBtn = document.getElementById('addNotificationBtn');
+if (addNotificationBtn) addNotificationBtn.addEventListener('click', () => this.openNotificationModal());
+
+const notificationForm = document.getElementById('notificationForm');
+if (notificationForm) notificationForm.addEventListener('submit', (e) => {
+e.preventDefault();
+this.saveNotification();
+});
+
+const sendNotificationBtn = document.getElementById('sendNotificationBtn');
+if (sendNotificationBtn) sendNotificationBtn.addEventListener('click', () => this.sendCurrentNotification());
+
+// Opciones de envío
+document.querySelectorAll('.send-option-btn').forEach(btn => {
+btn.addEventListener('click', (e) => {
+document.querySelectorAll('.send-option-btn').forEach(b => b.classList.remove('active'));
+e.currentTarget.classList.add('active');
+
+const sendType = e.currentTarget.dataset.type;
+const scheduleFields = document.getElementById('scheduleFields');
+
+if (sendType === 'schedule') {
+if (scheduleFields) scheduleFields.style.display = 'block';
+} else {
+if (scheduleFields) scheduleFields.style.display = 'none';
+}
+});
+});
+
+// Botones estado forzado
+document.querySelectorAll('.state-action-btn').forEach(btn => {
+btn.addEventListener('click', (e) => {
+document.querySelectorAll('.state-action-btn').forEach(b => b.classList.remove('active'));
+e.currentTarget.classList.add('active');
+});
+});
+
+// Guardar horarios y forzado
+const saveBH = document.getElementById('saveBusinessHours');
+if (saveBH) saveBH.addEventListener('click', () => this.saveBusinessHours());
+
+const saveFS = document.getElementById('saveForcedState');
+if (saveFS) saveFS.addEventListener('click', () => this.saveForcedState());
+
+// Insignias
+const updInsBtn = document.getElementById('updateinsigniasBtn');
+if (updInsBtn) updInsBtn.addEventListener('click', (e) => this.updateinsignias());
+
+const showInsStatsBtn = document.getElementById('showinsigniasStatsBtn');
+if (showInsStatsBtn) showInsStatsBtn.addEventListener('click', () => this.showinsigniasStats());
+
+// Cierre de modales por el botón close
+document.querySelectorAll('.close').forEach(closeBtn => {
+closeBtn.addEventListener('click', (e) => {
+e.stopPropagation();
+const modal = e.currentTarget.closest('.modal');
+if (modal) modal.style.display = 'none';
+});
+});
+
+// Cerrar modal al hacer clic fuera
+document.querySelectorAll('.modal').forEach(modal => {
+modal.addEventListener('click', (e) => {
+if (e.target === modal) modal.style.display = 'none';
+});
+});
+
+// Uploads
+const productImageUpload = document.getElementById('productImageUpload');
+if (productImageUpload) productImageUpload.addEventListener('change', (e) => {
+this.previewImageAsBase64(e.target, 'productImagePreview', 'productImageData');
+});
+
+const bannerImageUpload = document.getElementById('bannerImageUpload');
+if (bannerImageUpload) bannerImageUpload.addEventListener('change', (e) => {
+this.previewImageAsBase64(e.target, 'bannerImagePreview', 'bannerImageData');
+});
+
+// Cerrar stats modal
+const statsClose = document.querySelector('#statsModal .close');
+if (statsClose) statsClose.addEventListener('click', () => {
+const sm = document.getElementById('statsModal');
+if (sm) sm.style.display = 'none';
+});
+}
+
+async loadTabData(tab) {
+try {
+switch (tab) {
+case 'products':
+if (!this.productsLoaded) {
+await this.loadProducts();
+this.productsLoaded = true;
+}
+break;
+case 'banners':
+if (!this.bannersLoaded) {
+await this.loadBanners();
+this.bannersLoaded = true;
+}
+break;
+case 'notifications':
+if (!this.notificationsLoaded) {
+await this.loadNotifications();
+await this.loadNotificationStats();
+this.notificationsLoaded = true;
+}
+break;
+case 'hours':
+if (!this.hoursLoaded) {
+await this.loadBusinessHours();
+await this.loadForcedState();
+this.hoursLoaded = true;
+}
+break;
+}
+} catch (error) {
+console.error(`Error loading ${tab} data:`, error);
+this.showNotification('Error', `Error al cargar ${tab}`, 'error');
+}
+}
+
+/* ========== Sistema de notificaciones in-app (UI) ========== */
+setupSystemNotifications() {
+let container = document.getElementById('systemNotifications');
+if (!container) {
+container = document.createElement('div');
+container.id = 'systemNotifications';
+container.className = 'system-notifications';
+document.body.appendChild(container);
+} else {
+container.classList.add('system-notifications');
+}
+}
+
+showNotification(title, message, type = 'info', duration = 5000) {
+const notification = {
+title,
+message,
+type,
+duration,
+id: Date.now() + Math.random()
+};
+this.notificationQueue.push(notification);
+this.processNotificationQueue();
+}
+
+processNotificationQueue() {
+if (this.isShowingNotification || this.notificationQueue.length === 0) {
+return;
+}
+this.isShowingNotification = true;
+const notification = this.notificationQueue.shift();
+this.displayNotification(notification);
+}
+
+displayNotification(notification) {
+const notificationContainer = document.getElementById('systemNotifications');
+if (!notificationContainer) this.setupSystemNotifications();
+
 const notificationElement = document.createElement('div');
-notificationElement.className = `app-notification ${notification.type}`;
-
-const typeIcons = {
-'info': 'fas fa-info-circle',
-'success': 'fas fa-check-circle',
-'warning': 'fas fa-exclamation-triangle',
-'error': 'fas fa-exclamation-circle',
-'promo': 'fas fa-gift'
-};
-
-const borderColors = {
-'info': '#3498db',
-'success': '#2ecc71',
-'warning': '#f39c12',
-'error': '#e74c3c',
-'promo': '#9b59b6'
-};
+notificationElement.className = `system-notification ${notification.type}`;
+notificationElement.dataset.id = notification.id;
 
 notificationElement.innerHTML = `
 <div class="notification-icon">
-<i class="${typeIcons[notification.type]}"></i>
+<i class="fas fa-${this.getNotificationIcon(notification.type)}"></i>
 </div>
 <div class="notification-content">
-<div class="notification-title">${notification.title}</div>
-<div class="notification-message">${notification.message}</div>
+<strong>${notification.title}</strong>
+<div>${notification.message}</div>
+<div class="progress-bar">
+<div class="progress-bar-fill"></div>
 </div>
-<button class="notification-close"><i class="fas fa-times"></i></button>
+</div>
+<button class="notification-close">
+<i class="fas fa-times"></i>
+</button>
 `;
 
-notificationElement.style.borderLeftColor = borderColors[notification.type];
+notificationContainer.appendChild(notificationElement);
 
-const icon = notificationElement.querySelector('.notification-icon i');
-icon.style.color = borderColors[notification.type];
+// Forzar la animación de entrada
+requestAnimationFrame(() => {
+requestAnimationFrame(() => {
+notificationElement.classList.add('show');
+});
+});
 
+// Manejo de progreso con timestamps (más fiable que basarse en width)
+const progressFill = notificationElement.querySelector('.progress-bar-fill');
+let startTime = performance.now();
+let remaining = notification.duration;
+let rafId = null;
+let endTime = startTime + remaining;
+let paused = false;
+let pausedAt = 0;
+
+const updateProgress = () => {
+const now = performance.now();
+const ratio = Math.max(0, Math.min(1, (endTime - now) / notification.duration));
+if (progressFill) {
+// scaleX para animación suave y reversible
+progressFill.style.transform = `scaleX(${ratio})`;
+}
+if (now < endTime) {
+rafId = requestAnimationFrame(updateProgress);
+} else {
+// tiempo cumplido -> remover
+this.removeNotification(notificationElement);
+}
+};
+
+const startTimer = () => {
+startTime = performance.now();
+endTime = startTime + remaining;
+if (rafId) cancelAnimationFrame(rafId);
+rafId = requestAnimationFrame(updateProgress);
+};
+
+const pauseTimer = () => {
+if (paused) return;
+paused = true;
+pausedAt = performance.now();
+remaining = Math.max(0, endTime - pausedAt);
+if (rafId) cancelAnimationFrame(rafId);
+notificationElement.classList.add('hover-paused');
+// almacenar escala pausada para CSS fallback
+const scale = remaining / notification.duration;
+notificationElement.style.setProperty('--paused-scale', String(scale));
+};
+
+const resumeTimer = () => {
+if (!paused) return;
+paused = false;
+startTimer();
+notificationElement.classList.remove('hover-paused');
+};
+
+// Eventos de hover para pausar y reanudar
+notificationElement.addEventListener('mouseenter', pauseTimer);
+notificationElement.addEventListener('mouseleave', resumeTimer);
+
+// Botón cerrar
 const closeBtn = notificationElement.querySelector('.notification-close');
 closeBtn.addEventListener('click', () => {
-notificationElement.style.animation = 'slideOutRight 0.3s ease-in';
+if (rafId) cancelAnimationFrame(rafId);
+this.removeNotification(notificationElement);
+});
+
+// Iniciar temporizador
+startTimer();
+
+// Guardar referencias para limpiar si es necesario
+this.notificationTimeouts.set(notificationElement, {
+rafId,
+pause: pauseTimer,
+resume: resumeTimer
+});
+
+// Sonido para success/error
+if (notification.type === 'success' || notification.type === 'error') {
+this.playNotificationSound();
+}
+}
+
+removeNotification(notificationElement) {
+if (!notificationElement || !notificationElement.parentNode) return;
+
+const timeoutData = this.notificationTimeouts.get(notificationElement);
+if (timeoutData) {
+if (timeoutData.rafId) cancelAnimationFrame(timeoutData.rafId);
+this.notificationTimeouts.delete(notificationElement);
+}
+
+// remover listeners de hover si se guardaron
+try {
+notificationElement.removeEventListener('mouseenter', timeoutData?.pause);
+notificationElement.removeEventListener('mouseleave', timeoutData?.resume);
+} catch (e) {
+// noop
+}
+
+notificationElement.classList.remove('show');
 setTimeout(() => {
 if (notificationElement.parentNode) {
 notificationElement.parentNode.removeChild(notificationElement);
 }
+this.isShowingNotification = false;
+// procesar siguiente en la cola
+this.processNotificationQueue();
 }, 300);
-});
-
-setTimeout(() => {
-if (notificationElement.parentNode) {
-notificationElement.style.animation = 'slideOutRight 0.3s ease-in';
-setTimeout(() => {
-if (notificationElement.parentNode) {
-notificationElement.parentNode.removeChild(notificationElement);
-}
-}, 300);
-}
-}, 5000);
-
-document.body.appendChild(notificationElement);
-}
-
-async markAsRead(notificationId) {
-try {
-await fetch(`/api/client/notifications/${notificationId}/read`, {
-method: 'POST',
-headers: {
-'Content-Type': 'application/json'
-},
-body: JSON.stringify({
-device_id: this.deviceId
-})
-});
-
-this.unreadCount = Math.max(0, this.unreadCount - 1);
-this.updateNotificationBadge();
-} catch (error) {
-console.error('Error al marcar notificación como leída:', error);
-}
-}
-
-startNotificationPolling() {
-this.notificationCheckInterval = setInterval(async () => {
-await this.getUnreadCount();
-await this.loadNotifications();
-}, 30000);
-}
-
-setupEventListeners() {
-const floatingMenuBtn = document.getElementById('floatingMenuBtn');
-const notificationsBtn = document.getElementById('notificationsBtn');
-const optionsBtn = document.getElementById('optionsBtn');
-
-if (floatingMenuBtn) {
-floatingMenuBtn.addEventListener('click', (e) => {
-e.stopPropagation();
-if (this.isAnimatingFloatingMenu) return;
-
-if (this.isFloatingMenuOpen) {
-this.hideFloatingMenu();
-} else {
-this.showFloatingMenu();
-}
-});
-}
-
-if (notificationsBtn) {
-notificationsBtn.addEventListener('click', (e) => {
-e.stopPropagation();
-if (this.isAnimatingNotificationsPanel) return;
-
-if (this.isNotificationsOpen) {
-this.hideNotificationsPanel();
-} else {
-this.showNotificationsPanel();
-}
-});
-}
-
-if (optionsBtn) {
-optionsBtn.addEventListener('click', (e) => {
-e.stopPropagation();
-if (this.isAnimatingOptionsMenu) return;
-
-if (this.isOptionsOpen) {
-this.hideOptionsMenu();
-} else {
-this.showOptionsMenu();
-}
-});
-}
-
-document.querySelector('.modal-close')?.addEventListener('click', () => {
-this.hideModal();
-});
-
-document.getElementById('alertClose')?.addEventListener('click', () => {
-this.hideAlert();
-});
-}
-
-showFloatingMenu() {
-if (this.isAnimatingFloatingMenu) return;
-this.isAnimatingFloatingMenu = true;
-
-const menuItems = [
-{ icon: 'fas fa-home', label: 'Inicio', action: () => window.scrollTo(0, 0) },
-{ icon: 'fas fa-sync', label: 'Recargar', action: () => this.reloadAndClearCache() },
-{ icon: 'fas fa-info-circle', label: 'Acerca de', action: () => this.showAlert('Acerca de', 'Aplicación desarrollada con tecnologías web modernas.') },
-{ icon: 'fas fa-power-off', label: 'Cerrar App', action: () => this.closeApplication() }
-];
-
-let menu = document.querySelector('.floating-menu');
-if (menu) {
-menu.remove();
-}
-
-menu = document.createElement('div');
-menu.className = 'floating-menu';
-
-menuItems.forEach(item => {
-const menuItem = document.createElement('button');
-menuItem.className = 'floating-menu-item';
-menuItem.innerHTML = `<i class="${item.icon}"></i><span>${item.label}</span>`;
-menuItem.addEventListener('click', (e) => {
-e.stopPropagation();
-item.action();
-this.hideFloatingMenu();
-});
-menu.appendChild(menuItem);
-});
-
-document.body.appendChild(menu);
-
-setTimeout(() => {
-menu.classList.add('show');
-this.isFloatingMenuOpen = true;
-this.isAnimatingFloatingMenu = false;
-}, 10);
-
-setTimeout(() => {
-const closeOnClickOutside = (e) => {
-if (!menu.contains(e.target) && e.target.id !== 'floatingMenuBtn') {
-this.hideFloatingMenu();
-document.removeEventListener('click', closeOnClickOutside);
-}
-};
-document.addEventListener('click', closeOnClickOutside);
-}, 100);
-}
-
-async reloadAndClearCache() {
-try {
-// Limpiar cache antes de recargar
-if ('caches' in window) {
-const cacheNames = await caches.keys();
-await Promise.all(
-cacheNames.map(cacheName => caches.delete(cacheName))
-);
-console.log('Cache limpiado antes de recargar');
-}
-
-// Recargar la página forzando carga desde servidor
-location.reload(true);
-
-} catch (error) {
-console.error('Error al limpiar cache:', error);
-// Si falla la limpieza, recargar de todas formas
-location.reload();
-}
-}
-
-hideFloatingMenu() {
-if (this.isAnimatingFloatingMenu) return;
-this.isAnimatingFloatingMenu = true;
-
-const menu = document.querySelector('.floating-menu');
-if (menu) {
-menu.classList.remove('show');
-setTimeout(() => {
-if (menu.parentNode) {
-menu.parentNode.removeChild(menu);
-}
-this.isFloatingMenuOpen = false;
-this.isAnimatingFloatingMenu = false;
-}, 300);
-} else {
-this.isAnimatingFloatingMenu = false;
-}
-}
-
-closeApplication() {
-this.showModal(
-'Cerrar Aplicación',
-'¿Estás seguro de que deseas cerrar la aplicación?',
-() => {
-// Limpiar solo cache (no localStorage)
-this.cleanCacheOnly().then(() => {
-// Cerrar conexiones
-this.closeAllConnections();
-
-// Método directo para cerrar pestaña
-this.closeTabDirectly();
-});
-},
-() => {
-console.log('Cierre de aplicación cancelado');
-}
-);
-}
-
-async cleanCacheOnly() {
-try {
-// Limpiar solo cache de Service Worker (no localStorage)
-if ('caches' in window) {
-const cacheNames = await caches.keys();
-await Promise.all(
-cacheNames.map(cacheName => caches.delete(cacheName))
-);
-}
-
-console.log('Limpieza de cache realizada');
-} catch (error) {
-console.error('Error limpiando cache:', error);
-}
-}
-
-closeAllConnections() {
-if (this.realtimeConnection) {
-this.realtimeConnection.close();
-this.realtimeConnection = null;
-}
-
-if (this.bannerInterval) {
-clearInterval(this.bannerInterval);
-this.bannerInterval = null;
-}
-
-if (this.notificationCheckInterval) {
-clearInterval(this.notificationCheckInterval);
-this.notificationCheckInterval = null;
-}
-}
-
-closeTabDirectly() {
-try {
-// Método principal - funciona en la mayoría de navegadores modernos
-if (window.opener || window.history.length === 1) {
-window.close();
-return;
-}
-
-// Método alternativo
-const newWindow = window.open('', '_self');
-if (newWindow) {
-newWindow.close();
-}
-
-// Último intento directo
-if (!window.closed) {
-window.close();
-}
-
-} catch (error) {
-console.log('No se pudo cerrar automáticamente');
-}
-}
-
-showOptionsMenu() {
-if (this.isAnimatingOptionsMenu) return;
-this.isAnimatingOptionsMenu = true;
-
-const isDarkMode = document.body.classList.contains('dark-mode');
-const themeLabel = isDarkMode ? 'Tema Claro' : 'Tema Oscuro';
-const themeIcon = isDarkMode ? 'fas fa-sun' : 'fas fa-moon';
-
-const menuItems = [
-{ icon: themeIcon, label: themeLabel, action: () => this.toggleTheme() },
-{ icon: 'fas fa-bell', label: 'Notificaciones', action: () => this.toggleNotifications() },
-{ icon: 'fas fa-shield-alt', label: 'Privacidad', action: () => this.showAlert('Privacidad', 'Tu información está protegida.') },
-{ icon: 'fas fa-question-circle', label: 'Ayuda', action: () => this.showAlert('Ayuda', 'Contacta al soporte técnico para ayuda.') }
-];
-
-const menu = document.createElement('div');
-menu.className = 'options-menu';
-
-menuItems.forEach(item => {
-const menuItem = document.createElement('button');
-menuItem.className = 'options-menu-item';
-menuItem.innerHTML = `<i class="${item.icon}"></i><span>${item.label}</span>`;
-menuItem.addEventListener('click', (e) => {
-e.stopPropagation();
-item.action();
-this.hideOptionsMenu();
-});
-menu.appendChild(menuItem);
-});
-
-const closeBtn = document.createElement('button');
-closeBtn.className = 'options-menu-close';
-closeBtn.innerHTML = '<i class="fas fa-times"></i>';
-closeBtn.addEventListener('click', (e) => {
-e.stopPropagation();
-this.hideOptionsMenu();
-});
-menu.appendChild(closeBtn);
-
-document.body.appendChild(menu);
-
-setTimeout(() => {
-menu.classList.add('active');
-this.isOptionsOpen = true;
-this.isAnimatingOptionsMenu = false;
-}, 10);
-
-setTimeout(() => {
-const closeOnClickOutside = (e) => {
-if (!menu.contains(e.target) && e.target.id !== 'optionsBtn') {
-this.hideOptionsMenu();
-document.removeEventListener('click', closeOnClickOutside);
-}
-};
-document.addEventListener('click', closeOnClickOutside);
-}, 100);
-}
-
-hideOptionsMenu() {
-if (this.isAnimatingOptionsMenu) return;
-this.isAnimatingOptionsMenu = true;
-
-const menu = document.querySelector('.options-menu');
-if (menu) {
-menu.classList.remove('active');
-setTimeout(() => {
-if (menu.parentNode) {
-menu.parentNode.removeChild(menu);
-}
-this.isOptionsOpen = false;
-this.isAnimatingOptionsMenu = false;
-}, 300);
-} else {
-this.isAnimatingOptionsMenu = false;
-}
-}
-
-toggleTheme() {
-const isDarkMode = document.body.classList.contains('dark-mode');
-if (isDarkMode) {
-document.body.classList.remove('dark-mode');
-document.body.classList.add('light-mode');
-localStorage.setItem('userTheme', 'light-mode');
-} else {
-document.body.classList.remove('light-mode');
-document.body.classList.add('dark-mode');
-localStorage.setItem('userTheme', 'dark-mode');
-}
-this.applyTheme();
-}
-
-toggleNotifications() {
-this.requestNotificationPermission({
-title: 'Notificaciones',
-message: 'Las notificaciones están ahora activas para esta aplicación.'
-});
-this.hideOptionsMenu();
-}
-
-showNotificationsPanel() {
-if (this.isAnimatingNotificationsPanel) return;
-this.isAnimatingNotificationsPanel = true;
-
-this.clearNotificationBadge();
-
-const panel = document.createElement('div');
-panel.className = 'notifications-panel';
-
-panel.innerHTML = `
-<div class="notifications-header">
-<h3><i class="fas fa-bell"></i> Notificaciones</h3>
-<button class="close-panel"><i class="fas fa-times"></i></button>
-</div>
-<div class="notifications-list">
-${this.notifications.length === 0 ? 
-'<div class="no-notifications">No hay notificaciones</div>' : 
-this.notifications.map(notification => `
-<div class="notification-item ${notification.is_read ? 'read' : 'unread'} ${notification.type}">
-<div class="notification-icon">
-<i class="${this.getNotificationIcon(notification.type)}"></i>
-</div>
-<div class="notification-content">
-<div class="notification-title">${notification.title}</div>
-<div class="notification-message">${notification.message}</div>
-<div class="notification-time">${new Date(notification.send_at).toLocaleString()}</div>
-</div>
-</div>
-`).join('')
-}
-</div>
-`;
-
-const closeBtn = panel.querySelector('.close-panel');
-closeBtn.addEventListener('click', (e) => {
-e.stopPropagation();
-this.hideNotificationsPanel();
-});
-
-const overlay = document.createElement('div');
-overlay.className = 'notifications-overlay';
-
-overlay.addEventListener('click', (e) => {
-e.stopPropagation();
-this.hideNotificationsPanel();
-});
-
-document.body.appendChild(overlay);
-document.body.appendChild(panel);
-
-setTimeout(() => {
-overlay.classList.add('active');
-panel.classList.add('active');
-this.isNotificationsOpen = true;
-this.isAnimatingNotificationsPanel = false;
-}, 10);
-}
-
-hideNotificationsPanel() {
-if (this.isAnimatingNotificationsPanel) return;
-this.isAnimatingNotificationsPanel = true;
-
-const panel = document.querySelector('.notifications-panel');
-const overlay = document.querySelector('.notifications-overlay');
-
-if (panel) {
-panel.classList.remove('active');
-setTimeout(() => {
-if (panel.parentNode) panel.parentNode.removeChild(panel);
-this.isNotificationsOpen = false;
-this.isAnimatingNotificationsPanel = false;
-}, 300);
-}
-
-if (overlay) {
-overlay.classList.remove('active');
-setTimeout(() => {
-if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
-}, 300);
-}
-}
-
-clearNotificationBadge() {
-this.unreadCount = 0;
-this.updateNotificationBadge();
-this.markAllNotificationsAsRead();
-}
-
-async markAllNotificationsAsRead() {
-try {
-for (const notification of this.notifications) {
-if (!notification.is_read) {
-await this.markAsRead(notification.id);
-}
-}
-} catch (error) {
-console.error('Error al marcar todas las notificaciones como leídas:', error);
-}
 }
 
 getNotificationIcon(type) {
 const icons = {
-'info': 'fas fa-info-circle',
-'success': 'fas fa-check-circle',
-'warning': 'fas fa-exclamation-triangle',
-'error': 'fas fa-exclamation-circle',
-'promo': 'fas fa-gift'
+'success': 'check-circle',
+'error': 'exclamation-circle',
+'warning': 'exclamation-triangle',
+'info': 'info-circle'
 };
-return icons[type] || 'fas fa-bell';
+return icons[type] || 'info-circle';
 }
 
-showAlert(title, message) {
-const modal = document.getElementById('customAlert');
-const messageElement = document.getElementById('alertMessage');
-
-if (modal && messageElement) {
-messageElement.textContent = message;
-modal.classList.add('active');
-} else {
-alert(`${title}: ${message}`);
-}
+playNotificationSound() {
+if (!this.notificationSound) return;
+this.notificationSound.currentTime = 0;
+this.notificationSound.play().catch(e => {
+// silenciar errores por políticas del navegador
+console.log('No se pudo reproducir el sonido de notificación');
+});
 }
 
-hideAlert() {
-const modal = document.getElementById('customAlert');
-if (modal) {
-modal.classList.remove('active');
-}
-}
+/* ========== Confirmación modal ligero ========== */
+async showConfirmation(title, message) {
+return new Promise((resolve) => {
+const modal = document.createElement('div');
+modal.className = 'modal confirmation-modal';
+modal.innerHTML = `
+<div class="modal-content">
+<div class="modal-header"><h3>${this.escapeHtml(title)}</h3><button class="close">&times;</button></div>
+<div class="modal-body">
+<div class="modal-message">${this.escapeHtml(message)}</div>
+<div class="modal-actions" style="margin-top:1rem;">
+<button class="btn-secondary" id="confirmCancel">Cancelar</button>
+<button class="btn-primary" id="confirmOk">Aceptar</button>
+</div>
+</div>
+</div>
+`;
 
-showModal(title, message, onConfirm = null, onCancel = null) {
-const modal = document.getElementById('customModal');
-const titleElement = document.getElementById('modalTitle');
-const messageElement = document.getElementById('modalMessage');
-const confirmBtn = document.getElementById('modalConfirm');
-const cancelBtn = document.getElementById('modalCancel');
-
-if (modal && titleElement && messageElement) {
-titleElement.textContent = title;
-messageElement.textContent = message;
-modal.classList.add('active');
+document.body.appendChild(modal);
+// asegurar close
+modal.style.display = 'block';
 
 const cleanup = () => {
-confirmBtn.onclick = null;
-cancelBtn.onclick = null;
-modal.classList.remove('active');
+modal.style.display = 'none';
+setTimeout(() => {
+if (modal.parentNode) modal.parentNode.removeChild(modal);
+}, 300);
 };
 
-confirmBtn.onclick = () => {
-if (onConfirm) onConfirm();
+modal.querySelector('.close').addEventListener('click', () => {
 cleanup();
-};
+resolve(false);
+});
 
-cancelBtn.onclick = () => {
-if (onCancel) onCancel();
+modal.querySelector('#confirmOk').addEventListener('click', () => {
 cleanup();
+resolve(true);
+});
+
+modal.querySelector('#confirmCancel').addEventListener('click', () => {
+cleanup();
+resolve(false);
+});
+
+modal.addEventListener('click', (e) => {
+if (e.target === modal) {
+cleanup();
+resolve(false);
+}
+});
+});
+}
+
+/* ========== SSE (realtime) ========== */
+setupSSE() {
+try {
+this.eventSource = new EventSource('/api/realtime/events');
+
+this.eventSource.onopen = () => {
+console.log('Conectado al servidor SSE');
+this.showNotification('Conexión establecida', 'Conectado al servidor en tiempo real', 'success', 3000);
 };
-} else {
-if (confirm(message)) {
-if (onConfirm) onConfirm();
-} else {
-if (onCancel) onCancel();
+
+this.eventSource.onmessage = (event) => {
+try {
+const data = JSON.parse(event.data);
+this.handleSSEMessage(data);
+} catch (error) {
+console.error('Error procesando evento SSE:', error);
+}
+};
+
+this.eventSource.onerror = (event) => {
+console.error('Error en conexión SSE - intentando reconectar');
+if (this.eventSource.readyState === EventSource.CLOSED) {
+setTimeout(() => this.setupSSE(), 5000);
+}
+};
+} catch (error) {
+console.error('Error al configurar SSE:', error);
+setTimeout(() => this.setupSSE(), 5000);
+}
+}
+
+handleSSEMessage(data) {
+switch (data.event) {
+case 'products_updated':
+this.handleProductsUpdate(data.data);
+break;
+case 'new_notification':
+this.handleNewNotification(data.data);
+break;
+case 'banners_updated':
+this.handleBannersUpdate(data.data);
+break;
+case 'business_status_updated':
+this.handleBusinessStatusUpdate(data.data);
+break;
+case 'connected':
+console.log('Cliente conectado SSE:', data.data.clientId);
+break;
+default:
+console.log('Mensaje SSE no manejado:', data);
+}
+}
+
+handleProductsUpdate(payload) {
+this.showNotification('Productos actualizados', 'La lista de productos ha sido actualizada', 'info', 5000);
+this.loadProducts();
+}
+
+handleBannersUpdate(payload) {
+this.showNotification('Banners actualizados', 'La lista de banners ha sido actualizada', 'info', 5000);
+this.loadBanners();
+}
+
+handleBusinessStatusUpdate(payload) {
+this.showNotification('Estado actualizado', 'El estado del negocio ha sido actualizado', 'info', 5000);
+this.loadCurrentStatus();
+}
+
+handleNewNotification(payload) {
+this.showPushNotification(payload.notification);
+this.loadNotificationStats();
+this.loadNotifications();
+}
+
+/* ========== Notificaciones Push del navegador ========== */
+showPushNotification(notification) {
+if (!("Notification" in window)) {
+console.log("Este navegador no soporta notificaciones push");
+return;
+}
+
+if (Notification.permission === "granted") {
+this.createBrowserNotification(notification);
+} else if (Notification.permission !== "denied") {
+Notification.requestPermission().then(permission => {
+if (permission === "granted") {
+this.createBrowserNotification(notification);
+}
+});
+}
+}
+
+createBrowserNotification(notification) {
+const notif = new Notification(notification.title, {
+body: notification.message,
+icon: '/favicon.ico',
+badge: '/favicon.ico',
+tag: `notification-${notification.id}`,
+requireInteraction: true
+});
+
+notif.onclick = () => {
+window.focus();
+notif.close();
+};
+
+this.playNotificationSound();
+
+setTimeout(() => notif.close(), 10000);
+}
+
+async requestNotificationPermission() {
+if (!("Notification" in window)) {
+console.log("Este navegador no soporta notificaciones push");
+return;
+}
+
+if (Notification.permission === "default") {
+try {
+const permission = await Notification.requestPermission();
+if (permission === "granted") {
+this.showNotification('Notificaciones activadas', 'Ahora recibirás notificaciones push', 'success', 5000);
+}
+} catch (error) {
+console.error('Error solicitando permiso de notificaciones:', error);
 }
 }
 }
 
-hideModal() {
-const modal = document.getElementById('customModal');
-if (modal) {
-modal.classList.remove('active');
+/* ========== Escape HTML simple ========== */
+escapeHtml(unsafe) {
+if (typeof unsafe !== 'string') return unsafe;
+return unsafe
+.replace(/&/g, "&amp;")
+.replace(/</g, "&lt;")
+.replace(/>/g, "&gt;")
+.replace(/"/g, "&quot;")
+.replace(/'/g, "&#039;");
+}
+
+/* ========== Preview de imagen a base64 ========== */
+previewImageAsBase64(input, previewId, dataFieldId) {
+const file = input.files[0];
+const preview = document.getElementById(previewId);
+
+if (file) {
+if (!file.type.startsWith('image/')) {
+this.showNotification('Error', 'Por favor selecciona un archivo de imagen válido', 'error');
+input.value = '';
+return;
+}
+
+if (file.size > 5 * 1024 * 1024) {
+this.showNotification('Error', 'La imagen no puede ser mayor a 5MB', 'error');
+input.value = '';
+return;
+}
+
+const reader = new FileReader();
+reader.onload = (e) => {
+if (preview) preview.innerHTML = `<img src="${e.target.result}" alt="Preview">`;
+
+let dataField = document.getElementById(dataFieldId);
+if (!dataField) {
+dataField = document.createElement('input');
+dataField.type = 'hidden';
+dataField.id = dataFieldId;
+input.parentNode.appendChild(dataField);
+}
+dataField.value = e.target.result;
+
+input.removeAttribute('required');
+};
+reader.readAsDataURL(file);
+} else {
+if (preview) preview.innerHTML = '';
+const dataField = document.getElementById(dataFieldId);
+if (dataField) dataField.value = '';
+input.setAttribute('required', 'true');
+}
+}
+
+/* ========== Modales CRUD (asegurar que footer siempre accesible) ========== */
+openProductModal(product = null) {
+this.currentProduct = product;
+const modal = document.getElementById('productModal');
+const title = document.getElementById('productModalTitle');
+
+this.prepareModal(modal, () => {
+if (product) {
+title.innerHTML = '<i class="fas fa-edit"></i> Editar Producto';
+document.getElementById('productId').value = product.id;
+document.getElementById('productName').value = product.name;
+document.getElementById('productDescription').value = product.description || '';
+document.getElementById('productPrice').value = product.price;
+document.getElementById('productActive').checked = Boolean(product.is_active);
+document.getElementById('productNew').checked = Boolean(product.is_new);
+document.getElementById('productOffer').checked = Boolean(product.is_offer);
+document.getElementById('productFeatured').checked = Boolean(product.is_featured);
+document.getElementById('productBestSeller').checked = Boolean(product.is_best_seller);
+
+document.getElementById('productImagePreview').innerHTML = product.image_data ?
+`<img src="${product.image_data}" alt="Preview">` : '';
+
+let dataField = document.getElementById('productImageData');
+if (!dataField) {
+dataField = document.createElement('input');
+dataField.type = 'hidden';
+dataField.id = 'productImageData';
+document.getElementById('productImageUpload').parentNode.appendChild(dataField);
+}
+dataField.value = product.image_data || '';
+
+document.getElementById('productImageUpload').removeAttribute('required');
+} else {
+title.innerHTML = '<i class="fas fa-plus"></i> Agregar Producto';
+document.getElementById('productForm').reset();
+document.getElementById('productImagePreview').innerHTML = '';
+document.getElementById('productImageUpload').setAttribute('required', 'true');
+
+const dataField = document.getElementById('productImageData');
+if (dataField) dataField.value = '';
+}
+});
+}
+
+openBannerModal(banner = null) {
+this.currentBanner = banner;
+const modal = document.getElementById('bannerModal');
+const title = document.getElementById('bannerModalTitle');
+
+this.prepareModal(modal, () => {
+if (banner) {
+title.innerHTML = '<i class="fas fa-edit"></i> Editar Banner';
+document.getElementById('bannerId').value = banner.id;
+document.getElementById('bannerTitle').value = banner.title || '';
+document.getElementById('bannerSubtitle').value = banner.subtitle || '';
+document.getElementById('bannerActive').checked = Boolean(banner.is_active);
+
+document.getElementById('bannerImagePreview').innerHTML = banner.image_data ?
+`<img src="${banner.image_data}" alt="Preview">` : '';
+
+let dataField = document.getElementById('bannerImageData');
+if (!dataField) {
+dataField = document.createElement('input');
+dataField.type = 'hidden';
+dataField.id = 'bannerImageData';
+document.getElementById('bannerImageUpload').parentNode.appendChild(dataField);
+}
+dataField.value = banner.image_data || '';
+
+document.getElementById('bannerImageUpload').removeAttribute('required');
+} else {
+title.innerHTML = '<i class="fas fa-plus"></i> Agregar Banner';
+document.getElementById('bannerForm').reset();
+document.getElementById('bannerImagePreview').innerHTML = '';
+document.getElementById('bannerImageUpload').setAttribute('required', 'true');
+
+const dataField = document.getElementById('bannerImageData');
+if (dataField) dataField.value = '';
+}
+});
+}
+
+openNotificationModal(notification = null) {
+this.currentNotification = notification;
+const modal = document.getElementById('notificationModal');
+const title = document.getElementById('notificationModalTitle');
+
+this.prepareModal(modal, () => {
+document.querySelectorAll('.send-option-btn').forEach(btn => btn.classList.remove('active'));
+const defBtn = document.querySelector('.send-option-btn[data-type="immediately"]');
+if (defBtn) defBtn.classList.add('active');
+const scheduleFields = document.getElementById('scheduleFields');
+if (scheduleFields) scheduleFields.style.display = 'none';
+
+const now = new Date();
+const today = now.toISOString().split('T')[0];
+const currentTime12h = this.formatTimeTo12h(now.toTimeString().slice(0, 5));
+
+document.getElementById('notificationSendDate').value = today;
+document.getElementById('notificationSendTime').value = currentTime12h;
+
+if (notification) {
+title.innerHTML = '<i class="fas fa-edit"></i> Editar Notificación';
+document.getElementById('notificationId').value = notification.id;
+document.getElementById('notificationTitle').value = notification.title;
+document.getElementById('notificationMessage').value = notification.message;
+document.getElementById('notificationType').value = notification.type;
+
+const sendDate = new Date(notification.send_at);
+const formattedDate = sendDate.toISOString().split('T')[0];
+const formattedTime = this.formatTimeTo12h(sendDate.toTimeString().slice(0, 5));
+
+document.getElementById('notificationSendDate').value = formattedDate;
+document.getElementById('notificationSendTime').value = formattedTime;
+
+if (sendDate <= new Date()) {
+document.querySelector('.send-option-btn[data-type="immediately"]').classList.add('active');
+document.querySelector('.send-option-btn[data-type="schedule"]').classList.remove('active');
+if (scheduleFields) scheduleFields.style.display = 'none';
+} else {
+document.querySelector('.send-option-btn[data-type="schedule"]').classList.add('active');
+document.querySelector('.send-option-btn[data-type="immediately"]').classList.remove('active');
+if (scheduleFields) scheduleFields.style.display = 'block';
+}
+document.getElementById('sendNotificationBtn').style.display = notification.is_sent ? 'none' : 'block';
+} else {
+title.innerHTML = '<i class="fas fa-plus"></i> Nueva Notificación';
+document.getElementById('notificationForm').reset();
+document.getElementById('notificationType').value = 'info';
+document.getElementById('sendNotificationBtn').style.display = 'block';
+document.getElementById('notificationId').value = '';
+}
+});
+}
+
+prepareModal(modal, setupCallback) {
+// cerrar otros modales
+this.closeAllModals();
+// ejecutar callback para rellenar contenido
+setupCallback();
+
+// mostrar modal
+modal.style.display = 'block';
+
+// asegurar que el contenido tenga scroll interno y footer visible
+requestAnimationFrame(() => {
+const modalContent = modal.querySelector('.modal-content');
+if (modalContent) {
+modalContent.style.transform = 'translate(-50%,-50%) scale(1)';
+}
+const modalBody = modal.querySelector('.modal-body');
+if (modalBody) {
+modalBody.style.overflowY = 'auto';
+modalBody.style.maxHeight = 'calc(95vh - 200px)';
+}
+});
+}
+
+closeAllModals() {
+document.querySelectorAll('.modal').forEach(modal => modal.style.display = 'none');
+}
+
+async saveProduct() {
+const imageDataField = document.getElementById('productImageData');
+const imageData = imageDataField ? imageDataField.value : '';
+
+if (!imageData && !this.currentProduct) {
+this.showNotification('Error', 'La imagen del producto es requerida', 'error');
+return;
+}
+
+const formData = {
+name: document.getElementById('productName').value,
+description: document.getElementById('productDescription').value,
+price: document.getElementById('productPrice').value,
+image_data: imageData,
+is_active: document.getElementById('productActive').checked,
+is_new: document.getElementById('productNew').checked,
+is_offer: document.getElementById('productOffer').checked,
+is_featured: document.getElementById('productFeatured').checked,
+is_best_seller: document.getElementById('productBestSeller').checked
+};
+
+if (!formData.name || !formData.price) {
+this.showNotification('Error', 'Nombre y precio son campos requeridos', 'error');
+return;
+}
+
+const productId = document.getElementById('productId').value;
+let result;
+
+// botón submit
+let submitButton = document.querySelector('#productForm button[type="submit"]');
+if (!submitButton) submitButton = document.querySelector('#productForm .btn-primary');
+if (!submitButton) submitButton = document.querySelector('.modal-footer .btn-primary');
+
+let originalText = '';
+if (submitButton) {
+originalText = submitButton.innerHTML;
+submitButton.innerHTML = '<div class="loading-spinner"></div> Guardando...';
+submitButton.classList.add('btn-loading');
+submitButton.disabled = true;
+}
+
+try {
+if (productId) {
+result = await this.fetchData(`products/${productId}`, {
+method: 'PUT',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify(formData)
+});
+} else {
+result = await this.fetchData('products', {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify(formData)
+});
+}
+
+if (result) {
+document.getElementById('productModal').style.display = 'none';
+this.showNotification('Éxito', `Producto ${productId ? 'actualizado' : 'creado'} correctamente`, 'success');
+await this.loadProducts();
+}
+} catch (error) {
+this.showNotification('Error', error.message || 'Error al guardar el producto', 'error');
+} finally {
+if (submitButton) {
+submitButton.innerHTML = originalText;
+submitButton.classList.remove('btn-loading');
+submitButton.disabled = false;
 }
 }
 }
 
+async saveBanner() {
+const imageDataField = document.getElementById('bannerImageData');
+const imageData = imageDataField ? imageDataField.value : '';
+
+if (!imageData && !this.currentBanner) {
+this.showNotification('Error', 'La imagen del banner es requerida', 'error');
+return;
+}
+
+const formData = {
+title: document.getElementById('bannerTitle').value,
+subtitle: document.getElementById('bannerSubtitle').value,
+image_data: imageData,
+is_active: document.getElementById('bannerActive').checked
+};
+
+const bannerId = document.getElementById('bannerId').value;
+let result;
+
+const submitButton = document.querySelector('#bannerForm button[type="submit"]');
+const originalText = submitButton ? submitButton.innerHTML : '';
+
+if (submitButton) {
+submitButton.innerHTML = '<div class="loading-spinner"></div> Guardando...';
+submitButton.classList.add('btn-loading');
+submitButton.disabled = true;
+}
+
+try {
+if (bannerId) {
+result = await this.fetchData(`banners/${bannerId}`, {
+method: 'PUT',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify(formData)
+});
+} else {
+result = await this.fetchData('banners', {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify(formData)
+});
+}
+
+if (result) {
+document.getElementById('bannerModal').style.display = 'none';
+this.showNotification('Éxito', `Banner ${bannerId ? 'actualizado' : 'creado'} correctamente`, 'success');
+await this.loadBanners();
+}
+} catch (error) {
+this.showNotification('Error', error.message || 'Error al guardar el banner', 'error');
+} finally {
+if (submitButton) {
+submitButton.innerHTML = originalText;
+submitButton.classList.remove('btn-loading');
+submitButton.disabled = false;
+}
+}
+}
+
+async saveNotification() {
+const sendType = document.querySelector('.send-option-btn.active').dataset.type;
+
+let sendAt;
+if (sendType === 'immediately') {
+sendAt = new Date().toISOString();
+} else {
+const sendDate = document.getElementById('notificationSendDate').value;
+const sendTime = document.getElementById('notificationSendTime').value;
+
+if (!sendDate || !sendTime) {
+this.showNotification('Error', 'Debes especificar fecha y hora para el envío programado', 'error');
+return false;
+}
+
+const time24h = this.formatTimeTo24h(sendTime);
+const dateTimeString = `${sendDate}T${time24h}:00`;
+sendAt = new Date(dateTimeString).toISOString();
+}
+
+const formData = {
+title: document.getElementById('notificationTitle').value,
+message: document.getElementById('notificationMessage').value,
+type: document.getElementById('notificationType').value,
+is_active: true,
+send_at: sendAt
+};
+
+if (!formData.title || !formData.message) {
+this.showNotification('Error', 'Título y mensaje son campos requeridos', 'error');
+return false;
+}
+
+const notificationId = document.getElementById('notificationId').value;
+let result;
+
+const submitButton = document.querySelector('#notificationForm button[type="submit"]');
+let originalText = '';
+
+if (submitButton) {
+originalText = submitButton.innerHTML;
+submitButton.innerHTML = '<div class="loading-spinner"></div> Guardando...';
+submitButton.classList.add('btn-loading');
+submitButton.disabled = true;
+}
+
+try {
+if (notificationId) {
+result = await this.fetchData(`notifications/${notificationId}`, {
+method: 'PUT',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify(formData)
+});
+} else {
+result = await this.fetchData('notifications', {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify(formData)
+});
+}
+
+if (result) {
+if (!notificationId && result.id) {
+document.getElementById('notificationId').value = result.id;
+}
+this.showNotification('Éxito', `Notificación ${notificationId ? 'actualizada' : 'creada'} correctamente`, 'success');
+await this.loadNotifications();
+await this.loadNotificationStats();
+return true;
+}
+return false;
+} catch (error) {
+this.showNotification('Error', error.message || 'Error al guardar la notificación', 'error');
+return false;
+} finally {
+if (submitButton) {
+submitButton.innerHTML = originalText;
+submitButton.classList.remove('btn-loading');
+submitButton.disabled = false;
+}
+}
+}
+
+async sendNotification(id) {
+const confirmed = await this.showConfirmation(
+'Enviar notificación',
+'¿Estás seguro de que quieres enviar esta notificación ahora?'
+);
+
+if (!confirmed) return;
+
+try {
+const result = await this.fetchData(`notifications/${id}/send`, { method: 'POST' });
+if (result && result.success) {
+await this.loadNotifications();
+await this.loadNotificationStats();
+this.showNotification('Éxito', 'Notificación enviada correctamente', 'success');
+
+if (result.notification) {
+this.showPushNotification(result.notification);
+}
+}
+} catch (error) {
+this.showNotification('Error', error.message || 'Error al enviar la notificación', 'error');
+}
+}
+
+async sendCurrentNotification() {
+const saved = await this.saveNotification();
+if (!saved) return;
+const notificationId = document.getElementById('notificationId').value;
+if (notificationId) {
+await this.sendNotification(notificationId);
+document.getElementById('notificationModal').style.display = 'none';
+} else {
+this.showNotification('Error', 'No se pudo obtener el ID de la notificación', 'error');
+}
+}
+
+/* ========== Edit / Delete helpers ========== */
+async editProduct(id) {
+try {
+const products = await this.fetchData('products');
+const product = products.find(p => p.id == id);
+if (product) this.openProductModal(product);
+} catch (error) {
+console.error('Error editing product:', error);
+this.showNotification('Error', 'Error al cargar el producto', 'error');
+}
+}
+
+async editBanner(id) {
+try {
+const banners = await this.fetchData('banners');
+const banner = banners.find(b => b.id == id);
+if (banner) this.openBannerModal(banner);
+} catch (error) {
+console.error('Error editing banner:', error);
+this.showNotification('Error', 'Error al cargar el banner', 'error');
+}
+}
+
+async editNotification(id) {
+try {
+const notifications = await this.fetchData('notifications');
+const notification = notifications.find(n => n.id == id);
+if (notification) this.openNotificationModal(notification);
+} catch (error) {
+console.error('Error editing notification:', error);
+this.showNotification('Error', 'Error al cargar la notificación', 'error');
+}
+}
+
+async deleteProduct(id) {
+const confirmed = await this.showConfirmation(
+'Eliminar producto',
+'¿Estás seguro de que quieres eliminar este producto? Esta acción no se puede deshacer.'
+);
+if (!confirmed) return;
+
+try {
+const result = await this.fetchData(`products/${id}`, { method: 'DELETE' });
+if (result) {
+this.showNotification('Éxito', 'Producto eliminado correctamente', 'success');
+await this.loadProducts();
+}
+} catch (error) {
+this.showNotification('Error', error.message || 'Error al eliminar el producto', 'error');
+}
+}
+
+async deleteBanner(id) {
+const confirmed = await this.showConfirmation(
+'Eliminar banner',
+'¿Estás seguro de que quieres eliminar este banner? Esta acción no se puede deshacer.'
+);
+if (!confirmed) return;
+
+try {
+const result = await this.fetchData(`banners/${id}`, { method: 'DELETE' });
+if (result) {
+this.showNotification('Éxito', 'Banner eliminado correctamente', 'success');
+await this.loadBanners();
+}
+} catch (error) {
+this.showNotification('Error', error.message || 'Error al eliminar el banner', 'error');
+}
+}
+
+async deleteNotification(id) {
+const confirmed = await this.showConfirmation(
+'Eliminar notificación',
+'¿Estás seguro de que quieres eliminar esta notificación? Esta acción no se puede deshacer.'
+);
+if (!confirmed) return;
+
+try {
+const result = await this.fetchData(`notifications/${id}`, { method: 'DELETE' });
+if (result) {
+this.showNotification('Éxito', 'Notificación eliminada correctamente', 'success');
+await this.loadNotifications();
+await this.loadNotificationStats();
+}
+} catch (error) {
+this.showNotification('Error', error.message || 'Error al eliminar la notificación', 'error');
+}
+}
+
+/* ========== Actualizar insignias y estadísticas ========== */
+async updateinsignias() {
+const confirmed = await this.showConfirmation(
+'Actualizar insignias',
+'¿Estás seguro de que quieres actualizar automáticamente todas las etiquetas de productos?\n\n' +
+'Esta acción aplicará las reglas:\n' +
+'• 50+ likes → Destacado\n' +
+'• 100+ likes → Más Vendido\n' +
+'• 15 días → Quitar "Nuevo"\n\n' +
+'¿Continuar?'
+);
+if (!confirmed) return;
+
+const updateButton = document.querySelector('#updateinsigniasBtn');
+const originalText = updateButton ? updateButton.innerHTML : '';
+
+if (updateButton) {
+updateButton.innerHTML = '<div class="loading-spinner"></div> Actualizando...';
+updateButton.classList.add('btn-loading');
+updateButton.disabled = true;
+}
+
+try {
+const result = await this.fetchData('products/update-insignias', { method: 'POST' });
+if (result && result.success) {
+this.showNotification(
+'Insignias Actualizados',
+`Se actualizaron ${result.updatedProducts} productos.\nDestacados: ${result.stats.featured}\nMás Vendidos: ${result.stats.best_seller}\nNuevos: ${result.stats.new}`,
+'success'
+);
+await this.loadProducts();
+await this.showinsigniasStats();
+}
+} catch (error) {
+this.showNotification('Error', error.message || 'Error al actualizar insignias', 'error');
+} finally {
+if (updateButton) {
+updateButton.innerHTML = originalText;
+updateButton.classList.remove('btn-loading');
+updateButton.disabled = false;
+}
+}
+}
+
+async showinsigniasStats() {
+try {
+const modal = document.getElementById('statsModal');
+const statsContent = document.getElementById('statsContent');
+
+statsContent.innerHTML = '<div class="loading-spinner" style="margin: 2rem auto;"></div>';
+modal.style.display = 'block';
+
+const result = await this.fetchData('products/insignias-stats');
+
+if (result && result.success) {
+const stats = result.stats;
+
+statsContent.innerHTML = `
+<div class="stats-grid">
+<div class="stat-card">
+<i class="fas fa-box" style="color: #3498db;"></i>
+<span class="stat-value">${stats.total}</span>
+<span class="stat-label">Productos Totales</span>
+</div>
+<div class="stat-card">
+<i class="fas fa-star" style="color: #2ecc71;"></i>
+<span class="stat-value">${stats.current.new}</span>
+<span class="stat-label">Productos Nuevos</span>
+</div>
+<div class="stat-card">
+<i class="fas fa-award" style="color: #e74c3c;"></i>
+<span class="stat-value">${stats.current.featured}</span>
+<span class="stat-label">Destacados</span>
+</div>
+<div class="stat-card">
+<i class="fas fa-fire" style="color: #3498db;"></i>
+<span class="stat-value">${stats.current.best_seller}</span>
+<span class="stat-label">Más Vendidos</span>
+</div>
+</div>
+
+<div class="stats-section">
+<h4><i class="fas fa-bullseye"></i> Puntuación de Productos</h4>
+<div class="stats-grid">
+<div class="stat-card">
+<i class="fas fa-trophy" style="color: #f39c12;"></i>
+<span class="stat-value">${stats.eligible.featured}</span>
+<span class="stat-label">Destacado (50+ likes)</span>
+</div>
+<div class="stat-card">
+<i class="fas fa-crown" style="color: #9b59b6;"></i>
+<span class="stat-value">${stats.eligible.best_seller}</span>
+<span class="stat-label">Más Vendido (100+ likes)</span>
+</div>
+</div>
+</div>
+
+<div class="stats-section">
+<h4><i class="fas fa-clock"></i> Estado de Productos</h4>
+<div class="stats-grid">
+<div class="stat-card">
+<i class="fas fa-hourglass-end" style="color: #e74c3c;"></i>
+<span class="stat-value">${stats.expired.new}</span>
+<span class="stat-label">Nuevos Expirados</span>
+</div>
+<div class="stat-card">
+<i class="fas fa-percentage" style="color: #f39c12;"></i>
+<span class="stat-value">${stats.current.offer}</span>
+<span class="stat-label">Ofertas Activas</span>
+</div>
+</div>
+</div>
+
+${stats.expired.new > 0 ? `
+<div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 8px; padding: 1rem; margin-top: 1rem;">
+<i class="fas fa-exclamation-triangle" style="color: #f39c12;"></i>
+<strong>Acción Recomendada:</strong> ${stats.expired.new} productos han excedido los 15 días y deberían perder la etiqueta "Nuevo".
+</div>` : ''}
+`;
+} else {
+statsContent.innerHTML = '<p class="no-data">Error al cargar las estadísticas</p>';
+}
+} catch (error) {
+console.error('Error al obtener estadísticas:', error);
+const statsContent = document.getElementById('statsContent');
+if (statsContent) statsContent.innerHTML = '<p class="no-data">Error al cargar las estadísticas</p>';
+}
+}
+}
+
+// Inicializar al cargar DOM
 document.addEventListener('DOMContentLoaded', () => {
-const userTheme = localStorage.getItem('userTheme');
-if (userTheme) {
-document.body.classList.add(userTheme);
-}
-new ClientApp();
+new AdminDashboard();
 });
-
-if ('serviceWorker' in navigator) {
-window.addEventListener('load', () => {
-navigator.serviceWorker.register('/client/sw.js')
-.then(registration => {
-console.log('Service Worker registered: ', registration);
-})
-.catch(registrationError => {
-console.log('Service Worker registration failed: ', registrationError);
-});
-});
-}
