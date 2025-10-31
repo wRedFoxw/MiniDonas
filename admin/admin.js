@@ -1,5 +1,7 @@
+// admin.js
 class AdminDashboard {
 constructor() {
+// estado
 this.currentProduct = null;
 this.currentBanner = null;
 this.currentNotification = null;
@@ -7,13 +9,19 @@ this.productsLoaded = false;
 this.bannersLoaded = false;
 this.notificationsLoaded = false;
 this.hoursLoaded = false;
+
+// sonido de notificaci¨®n
 this.notificationSound = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==');
+
+// cola de notificaciones in-app
 this.notificationQueue = [];
 this.isShowingNotification = false;
-this.notificationTimeouts = new Map();
+this.notificationTimeouts = new Map(); // guarda rafIds, pause/resume funciones
+
 this.init();
 }
 
+/* ========== Inicializaci¨®n ========== */
 async init() {
 try {
 this.showGlobalLoading(true);
@@ -28,7 +36,6 @@ this.setupEventListeners();
 this.setupSystemNotifications();
 this.requestNotificationPermission();
 this.setupSSE();
-
 } catch (error) {
 console.error('Error inicializando dashboard:', error);
 this.showNotification('Error', 'Error al inicializar el panel', 'error');
@@ -37,7 +44,7 @@ this.showGlobalLoading(false);
 }
 }
 
-
+/* ========== Utilidades UI generales ========== */
 showGlobalLoading(show) {
 let loader = document.getElementById('globalLoader');
 
@@ -49,7 +56,7 @@ loader.className = 'global-loader';
 loader.innerHTML = `
 <div class="loader-content">
 <div class="loader-spinner"></div>
-<p>Cargando panel de administraciÃ³n...</p>
+<p>Cargando panel de administraci¨®n...</p>
 </div>
 `;
 document.body.appendChild(loader);
@@ -92,6 +99,25 @@ return null;
 }
 }
 
+setLoadingState(elementId, isLoading) {
+const element = document.getElementById(elementId);
+if (!element) return;
+if (isLoading) {
+element.classList.add('loading');
+if (!element.querySelector('.loading-spinner')) {
+const spinner = document.createElement('div');
+spinner.className = 'loading-spinner';
+spinner.style.margin = '2rem auto';
+element.appendChild(spinner);
+}
+} else {
+element.classList.remove('loading');
+const spinner = element.querySelector('.loading-spinner');
+if (spinner) spinner.remove();
+}
+}
+
+/* ========== Cargas iniciales ========== */
 async loadProducts() {
 try {
 this.setLoadingState('productsList', true);
@@ -166,36 +192,15 @@ console.error('Error loading notification stats:', error);
 }
 }
 
-setLoadingState(elementId, isLoading) {
-const element = document.getElementById(elementId);
-if (element) {
-if (isLoading) {
-element.classList.add('loading');
-if (!element.querySelector('.loading-spinner')) {
-const spinner = document.createElement('div');
-spinner.className = 'loading-spinner';
-spinner.style.margin = '2rem auto';
-element.appendChild(spinner);
-}
-} else {
-element.classList.remove('loading');
-const spinner = element.querySelector('.loading-spinner');
-if (spinner) spinner.remove();
-}
-}
-}
-
+/* ========== Renderizado (productos/banners/horarios/notificaciones) ========== */
 renderProducts(products) {
 const container = document.getElementById('productsList');
 if (!container) return;
-
 container.innerHTML = '';
-
 if (products.length === 0) {
 container.innerHTML = '<p class="no-data">No hay productos creados</p>';
 return;
 }
-
 products.forEach(product => {
 const productElement = this.createProductElement(product);
 container.appendChild(productElement);
@@ -205,14 +210,11 @@ container.appendChild(productElement);
 renderBanners(banners) {
 const container = document.getElementById('bannersList');
 if (!container) return;
-
 container.innerHTML = '';
-
 if (banners.length === 0) {
 container.innerHTML = '<p class="no-data">No hay banners creados</p>';
 return;
 }
-
 banners.forEach(banner => {
 const bannerElement = this.createBannerElement(banner);
 container.appendChild(bannerElement);
@@ -222,9 +224,7 @@ container.appendChild(bannerElement);
 renderBusinessHours(hours) {
 const container = document.getElementById('businessHoursList');
 if (!container) return;
-
 container.innerHTML = '';
-
 hours.forEach(hour => {
 const hourElement = this.createBusinessHourElement(hour);
 container.appendChild(hourElement);
@@ -232,12 +232,11 @@ container.appendChild(hourElement);
 }
 
 renderForcedState(forcedState) {
-document.getElementById('enableForcedState').checked = forcedState.is_forced;
+const toggle = document.getElementById('enableForcedState');
+if (toggle) toggle.checked = forcedState.is_forced;
 
-// Actualizar botones de estado forzado
 const openBtn = document.querySelector('[data-value="open"]');
 const closedBtn = document.querySelector('[data-value="closed"]');
-
 if (forcedState.forced_state) {
 openBtn.classList.add('active');
 closedBtn.classList.remove('active');
@@ -248,7 +247,8 @@ closedBtn.classList.add('active');
 
 if (forcedState.forced_until) {
 const localDateTime = new Date(forcedState.forced_until).toISOString().slice(0, 16);
-document.getElementById('forcedUntil').value = localDateTime;
+const forcedUntilInput = document.getElementById('forcedUntil');
+if (forcedUntilInput) forcedUntilInput.value = localDateTime;
 }
 }
 
@@ -265,27 +265,24 @@ container.innerHTML = `
 <div class="${statusClass}">
 <div class="status-item">
 <span class="status-label">Estado:</span>
-<span class="status-value">${status.is_open ? 'ðŸŸ¢ ABIERTO' : 'ðŸ”´ CERRADO'}</span>
+<span class="status-value">${status.is_open ? '?? ABIERTO' : '?? CERRADO'}</span>
 ${status.is_forced ? ' <small>(Forzado)</small>' : ''}
 </div>
 ${status.closing_time ? `
 <div class="status-item">
 <span class="status-label">Cierra a las:</span>
 <span class="status-value">${status.closing_time}</span>
-</div>
-` : ''}
+</div>` : ''}
 ${status.next_open_time ? `
 <div class="status-item">
 <span class="status-label">Abre a las:</span>
 <span class="status-value">${status.next_open_time}</span>
-</div>
-` : ''}
+</div>` : ''}
 ${status.next_open_day ? `
 <div class="status-item">
-<span class="status-label">PrÃ³xima apertura:</span>
+<span class="status-label">Pr¨®xima apertura:</span>
 <span class="status-value">${status.next_open_day.day_name} a las ${status.next_open_day.open_time}</span>
-</div>
-` : ''}
+</div>` : ''}
 <div class="status-message">${status.message}</div>
 </div>
 `;
@@ -294,20 +291,18 @@ ${status.next_open_day ? `
 renderNotifications(notifications) {
 const container = document.getElementById('notificationsList');
 if (!container) return;
-
 container.innerHTML = '';
-
 if (notifications.length === 0) {
 container.innerHTML = '<p class="no-data">No hay notificaciones creadas</p>';
 return;
 }
-
 notifications.forEach(notification => {
 const notificationElement = this.createNotificationElement(notification);
 container.appendChild(notificationElement);
 });
 }
 
+/* ========== Creaci¨®n de elementos UI ========== */
 createProductElement(product) {
 const div = document.createElement('div');
 div.className = `product-item ${!product.is_active ? 'product-inactive' : ''}`;
@@ -316,7 +311,7 @@ const insignias = [];
 if (product.is_new) insignias.push('Nuevo');
 if (product.is_offer) insignias.push('Oferta');
 if (product.is_featured) insignias.push('Destacado');
-if (product.is_best_seller) insignias.push('MÃ¡s Vendido');
+if (product.is_best_seller) insignias.push('M¨¢s Vendido');
 
 div.innerHTML = `
 <div class="product-info">
@@ -348,7 +343,7 @@ div.className = `banner-item ${!banner.is_active ? 'banner-inactive' : ''}`;
 
 div.innerHTML = `
 <div class="banner-info">
-<h4>${this.escapeHtml(banner.title || 'Sin tÃ­tulo')}</h4>
+<h4>${this.escapeHtml(banner.title || 'Sin t¨ªtulo')}</h4>
 <p>${this.escapeHtml(banner.subtitle || '')}</p>
 <p><small><i class="fas fa-eye"></i> Estado: ${banner.is_active ? 'Activo' : 'Inactivo'}</small></p>
 </div>
@@ -367,25 +362,6 @@ this.deleteBanner(e.target.closest('.btn-delete').dataset.id);
 });
 
 return div;
-}
-
-formatTimeTo12h(time24) {
-if (!time24) return '';
-const [hours, minutes] = time24.split(':');
-const hour = parseInt(hours, 10);
-const ampm = hour >= 12 ? 'PM' : 'AM';
-const hour12 = hour % 12 || 12;
-return `${hour12}:${minutes} ${ampm}`;
-}
-
-formatTimeTo24h(time12) {
-if (!time12) return '';
-const [time, ampm] = time12.split(' ');
-let [hours, minutes] = time.split(':');
-let hour = parseInt(hours, 10);
-if (ampm === 'PM' && hour < 12) hour += 12;
-if (ampm === 'AM' && hour === 12) hour = 0;
-return `${hour.toString().padStart(2, '0')}:${minutes}`;
 }
 
 createBusinessHourElement(hour) {
@@ -412,7 +388,7 @@ div.innerHTML = `
 <div class="business-hour-checkbox">
 <label>
 <input type="checkbox" class="is-closed" ${hour.is_closed ? 'checked' : ''}>
-<span class="checkbox-label">Cerrado este dÃ­a</span>
+<span class="checkbox-label">Cerrado este d¨ªa</span>
 </label>
 </div>
 `;
@@ -434,11 +410,11 @@ const div = document.createElement('div');
 div.className = 'notification-item';
 
 const typeLabels = {
-'info': 'InformaciÃ³n',
-'success': 'Ã‰xito',
+'info': 'Informaci¨®n',
+'success': '¨¦xito',
 'warning': 'Advertencia',
 'error': 'Error',
-'promo': 'PromociÃ³n'
+'promo': 'Promoci¨®n'
 };
 
 const sendDate = new Date(notification.send_at).toLocaleString('es-CU');
@@ -482,6 +458,27 @@ this.deleteNotification(e.target.closest('.btn-delete').dataset.id);
 return div;
 }
 
+/* ========== Formatos de hora ========== */
+formatTimeTo12h(time24) {
+if (!time24) return '';
+const [hours, minutes] = time24.split(':');
+const hour = parseInt(hours, 10);
+const ampm = hour >= 12 ? 'PM' : 'AM';
+const hour12 = hour % 12 || 12;
+return `${hour12}:${minutes} ${ampm}`;
+}
+
+formatTimeTo24h(time12) {
+if (!time12) return '';
+const [time, ampm] = time12.split(' ');
+let [hours, minutes] = time.split(':');
+let hour = parseInt(hours, 10);
+if (ampm === 'PM' && hour < 12) hour += 12;
+if (ampm === 'AM' && hour === 12) hour = 0;
+return `${hour.toString().padStart(2, '0')}:${minutes}`;
+}
+
+/* ========== Guardado / Envios ========== */
 async saveBusinessHours() {
 const hoursItems = document.querySelectorAll('.business-hour-item');
 const hours = [];
@@ -493,8 +490,8 @@ const closeTime = item.querySelector('.close-time').value;
 const isClosed = item.querySelector('.is-closed').checked;
 
 const dayMap = {
-'Domingo': 0, 'Lunes': 1, 'Martes': 2, 'MiÃ©rcoles': 3,
-'Jueves': 4, 'Viernes': 5, 'SÃ¡bado': 6
+'Domingo': 0, 'Lunes': 1, 'Martes': 2, 'Mi¨¦rcoles': 3,
+'Jueves': 4, 'Viernes': 5, 'S¨¢bado': 6
 };
 
 hours.push({
@@ -520,7 +517,7 @@ body: JSON.stringify({ hours })
 });
 
 if (result && result.success) {
-this.showNotification('Ã‰xito', 'Horarios guardados correctamente', 'success');
+this.showNotification('¨¦xito', 'Horarios guardados correctamente', 'success');
 await this.loadCurrentStatus();
 }
 } catch (error) {
@@ -538,7 +535,7 @@ const forcedState = document.querySelector('.state-action-btn.active')?.dataset.
 const forcedUntil = document.getElementById('forcedUntil').value;
 
 if (isForced && !forcedUntil) {
-this.showNotification('Error', 'Debes especificar hasta cuÃ¡ndo aplicar el estado forzado', 'error');
+this.showNotification('Error', 'Debes especificar hasta cu¨¢ndo aplicar el estado forzado', 'error');
 return;
 }
 
@@ -561,7 +558,7 @@ forced_until: forcedUntil
 });
 
 if (result && result.success) {
-this.showNotification('Ã‰xito', 'Estado forzado guardado correctamente', 'success');
+this.showNotification('¨¦xito', 'Estado forzado guardado correctamente', 'success');
 await this.loadCurrentStatus();
 }
 } catch (error) {
@@ -573,131 +570,126 @@ saveButton.disabled = false;
 }
 }
 
+/* ========== Event listeners y navegaci¨®n ========== */
 setupEventListeners() {
-// NavegaciÃ³n entre pestaÃ±as
+// Navegaci¨®n entre pesta?as
 document.querySelectorAll('.nav-btn').forEach(btn => {
 btn.addEventListener('click', (e) => {
 document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
 document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-e.target.classList.add('active');
-const tabId = `${e.target.dataset.tab}-tab`;
-document.getElementById(tabId).classList.add('active');
-this.loadTabData(e.target.dataset.tab);
+e.currentTarget.classList.add('active');
+const tabId = `${e.currentTarget.dataset.tab}-tab`;
+const panel = document.getElementById(tabId);
+if (panel) panel.classList.add('active');
+this.loadTabData(e.currentTarget.dataset.tab);
 });
 });
 
 // Productos
-document.getElementById('addProductBtn').addEventListener('click', () => {
-this.openProductModal();
-});
+const addProductBtn = document.getElementById('addProductBtn');
+if (addProductBtn) addProductBtn.addEventListener('click', () => this.openProductModal());
 
-document.getElementById('productForm').addEventListener('submit', (e) => {
+const productForm = document.getElementById('productForm');
+if (productForm) productForm.addEventListener('submit', (e) => {
 e.preventDefault();
 this.saveProduct();
 });
 
 // Banners
-document.getElementById('addBannerBtn').addEventListener('click', () => {
-this.openBannerModal();
-});
+const addBannerBtn = document.getElementById('addBannerBtn');
+if (addBannerBtn) addBannerBtn.addEventListener('click', () => this.openBannerModal());
 
-document.getElementById('bannerForm').addEventListener('submit', (e) => {
+const bannerForm = document.getElementById('bannerForm');
+if (bannerForm) bannerForm.addEventListener('submit', (e) => {
 e.preventDefault();
 this.saveBanner();
 });
 
 // Notificaciones
-document.getElementById('addNotificationBtn').addEventListener('click', () => {
-this.openNotificationModal();
-});
+const addNotificationBtn = document.getElementById('addNotificationBtn');
+if (addNotificationBtn) addNotificationBtn.addEventListener('click', () => this.openNotificationModal());
 
-document.getElementById('notificationForm').addEventListener('submit', (e) => {
+const notificationForm = document.getElementById('notificationForm');
+if (notificationForm) notificationForm.addEventListener('submit', (e) => {
 e.preventDefault();
 this.saveNotification();
 });
 
-document.getElementById('sendNotificationBtn').addEventListener('click', () => {
-this.sendCurrentNotification();
-});
+const sendNotificationBtn = document.getElementById('sendNotificationBtn');
+if (sendNotificationBtn) sendNotificationBtn.addEventListener('click', () => this.sendCurrentNotification());
 
-// Opciones de envÃ­o de notificaciones
+// Opciones de env¨ªo
 document.querySelectorAll('.send-option-btn').forEach(btn => {
 btn.addEventListener('click', (e) => {
 document.querySelectorAll('.send-option-btn').forEach(b => b.classList.remove('active'));
-e.target.classList.add('active');
+e.currentTarget.classList.add('active');
 
-const sendType = e.target.dataset.type;
+const sendType = e.currentTarget.dataset.type;
 const scheduleFields = document.getElementById('scheduleFields');
 
 if (sendType === 'schedule') {
-scheduleFields.style.display = 'block';
+if (scheduleFields) scheduleFields.style.display = 'block';
 } else {
-scheduleFields.style.display = 'none';
+if (scheduleFields) scheduleFields.style.display = 'none';
 }
 });
 });
 
-// Botones de estado forzado
+// Botones estado forzado
 document.querySelectorAll('.state-action-btn').forEach(btn => {
 btn.addEventListener('click', (e) => {
 document.querySelectorAll('.state-action-btn').forEach(b => b.classList.remove('active'));
-e.target.classList.add('active');
+e.currentTarget.classList.add('active');
 });
 });
 
-// Horarios
-document.getElementById('saveBusinessHours').addEventListener('click', () => {
-this.saveBusinessHours();
-});
+// Guardar horarios y forzado
+const saveBH = document.getElementById('saveBusinessHours');
+if (saveBH) saveBH.addEventListener('click', () => this.saveBusinessHours());
 
-document.getElementById('saveForcedState').addEventListener('click', () => {
-this.saveForcedState();
-});
+const saveFS = document.getElementById('saveForcedState');
+if (saveFS) saveFS.addEventListener('click', () => this.saveForcedState());
 
 // Insignias
-document.getElementById('updateinsigniasBtn').addEventListener('click', (e) => {
-this.updateinsignias();
-});
+const updInsBtn = document.getElementById('updateinsigniasBtn');
+if (updInsBtn) updInsBtn.addEventListener('click', (e) => this.updateinsignias());
 
-document.getElementById('showinsigniasStatsBtn').addEventListener('click', () => {
-this.showinsigniasStats();
-});
+const showInsStatsBtn = document.getElementById('showinsigniasStatsBtn');
+if (showInsStatsBtn) showInsStatsBtn.addEventListener('click', () => this.showinsigniasStats());
 
-// Cierre de modales
+// Cierre de modales por el bot¨®n close
 document.querySelectorAll('.close').forEach(closeBtn => {
 closeBtn.addEventListener('click', (e) => {
 e.stopPropagation();
-const modal = e.target.closest('.modal');
-if (modal) {
-modal.style.display = 'none';
-}
+const modal = e.currentTarget.closest('.modal');
+if (modal) modal.style.display = 'none';
 });
 });
 
 // Cerrar modal al hacer clic fuera
 document.querySelectorAll('.modal').forEach(modal => {
 modal.addEventListener('click', (e) => {
-if (e.target === modal) {
-modal.style.display = 'none';
-}
+if (e.target === modal) modal.style.display = 'none';
 });
 });
 
-// Upload de imÃ¡genes
-document.getElementById('productImageUpload').addEventListener('change', (e) => {
+// Uploads
+const productImageUpload = document.getElementById('productImageUpload');
+if (productImageUpload) productImageUpload.addEventListener('change', (e) => {
 this.previewImageAsBase64(e.target, 'productImagePreview', 'productImageData');
 });
 
-document.getElementById('bannerImageUpload').addEventListener('change', (e) => {
+const bannerImageUpload = document.getElementById('bannerImageUpload');
+if (bannerImageUpload) bannerImageUpload.addEventListener('change', (e) => {
 this.previewImageAsBase64(e.target, 'bannerImagePreview', 'bannerImageData');
 });
 
-// Cerrar estadÃ­sticas
-document.querySelector('#statsModal .close').addEventListener('click', () => {
-document.getElementById('statsModal').style.display = 'none';
+// Cerrar stats modal
+const statsClose = document.querySelector('#statsModal .close');
+if (statsClose) statsClose.addEventListener('click', () => {
+const sm = document.getElementById('statsModal');
+if (sm) sm.style.display = 'none';
 });
-
-this.setupSSE();
 }
 
 async loadTabData(tab) {
@@ -736,11 +728,17 @@ this.showNotification('Error', `Error al cargar ${tab}`, 'error');
 }
 }
 
+/* ========== Sistema de notificaciones in-app (UI) ========== */
 setupSystemNotifications() {
-const notificationContainer = document.createElement('div');
-notificationContainer.id = 'systemNotifications';
-notificationContainer.className = 'system-notifications';
-document.body.appendChild(notificationContainer);
+let container = document.getElementById('systemNotifications');
+if (!container) {
+container = document.createElement('div');
+container.id = 'systemNotifications';
+container.className = 'system-notifications';
+document.body.appendChild(container);
+} else {
+container.classList.add('system-notifications');
+}
 }
 
 showNotification(title, message, type = 'info', duration = 5000) {
@@ -751,7 +749,6 @@ type,
 duration,
 id: Date.now() + Math.random()
 };
-
 this.notificationQueue.push(notification);
 this.processNotificationQueue();
 }
@@ -760,7 +757,6 @@ processNotificationQueue() {
 if (this.isShowingNotification || this.notificationQueue.length === 0) {
 return;
 }
-
 this.isShowingNotification = true;
 const notification = this.notificationQueue.shift();
 this.displayNotification(notification);
@@ -768,6 +764,8 @@ this.displayNotification(notification);
 
 displayNotification(notification) {
 const notificationContainer = document.getElementById('systemNotifications');
+if (!notificationContainer) this.setupSystemNotifications();
+
 const notificationElement = document.createElement('div');
 notificationElement.className = `system-notification ${notification.type}`;
 notificationElement.dataset.id = notification.id;
@@ -780,7 +778,7 @@ notificationElement.innerHTML = `
 <strong>${notification.title}</strong>
 <div>${notification.message}</div>
 <div class="progress-bar">
-<div class="progress-bar-fill" style="width: 100%; transition: width ${notification.duration}ms linear;"></div>
+<div class="progress-bar-fill"></div>
 </div>
 </div>
 <button class="notification-close">
@@ -790,95 +788,106 @@ notificationElement.innerHTML = `
 
 notificationContainer.appendChild(notificationElement);
 
+// Forzar la animaci¨®n de entrada
 requestAnimationFrame(() => {
 requestAnimationFrame(() => {
 notificationElement.classList.add('show');
 });
 });
 
-let progressTimeout;
-let isPaused = false;
-let remainingTime = notification.duration;
-
-const startProgress = () => {
-if (progressTimeout) {
-clearTimeout(progressTimeout);
-}
-
+// Manejo de progreso con timestamps (m¨¢s fiable que basarse en width)
 const progressFill = notificationElement.querySelector('.progress-bar-fill');
-if (progressFill) {
-progressFill.style.width = '0%';
-progressFill.style.transition = `width ${remainingTime}ms linear`;
-}
+let startTime = performance.now();
+let remaining = notification.duration;
+let rafId = null;
+let endTime = startTime + remaining;
+let paused = false;
+let pausedAt = 0;
 
-progressTimeout = setTimeout(() => {
-if (!isPaused) {
+const updateProgress = () => {
+const now = performance.now();
+const ratio = Math.max(0, Math.min(1, (endTime - now) / notification.duration));
+if (progressFill) {
+// scaleX para animaci¨®n suave y reversible
+progressFill.style.transform = `scaleX(${ratio})`;
+}
+if (now < endTime) {
+rafId = requestAnimationFrame(updateProgress);
+} else {
+// tiempo cumplido -> remover
 this.removeNotification(notificationElement);
 }
-}, remainingTime);
 };
 
-const pauseProgress = () => {
-isPaused = true;
-if (progressTimeout) {
-clearTimeout(progressTimeout);
-}
-
-const progressFill = notificationElement.querySelector('.progress-bar-fill');
-if (progressFill) {
-const computedStyle = window.getComputedStyle(progressFill);
-const currentWidth = parseFloat(computedStyle.width);
-const progress = (currentWidth / 100) * remainingTime;
-remainingTime = progress;
-
-progressFill.style.transition = 'none';
-progressFill.style.width = `${currentWidth}%`;
-}
+const startTimer = () => {
+startTime = performance.now();
+endTime = startTime + remaining;
+if (rafId) cancelAnimationFrame(rafId);
+rafId = requestAnimationFrame(updateProgress);
 };
 
-const resumeProgress = () => {
-if (!isPaused) return;
-
-isPaused = false;
-startProgress();
+const pauseTimer = () => {
+if (paused) return;
+paused = true;
+pausedAt = performance.now();
+remaining = Math.max(0, endTime - pausedAt);
+if (rafId) cancelAnimationFrame(rafId);
+notificationElement.classList.add('hover-paused');
+// almacenar escala pausada para CSS fallback
+const scale = remaining / notification.duration;
+notificationElement.style.setProperty('--paused-scale', String(scale));
 };
 
-notificationElement.addEventListener('mouseenter', pauseProgress);
-notificationElement.addEventListener('mouseleave', resumeProgress);
+const resumeTimer = () => {
+if (!paused) return;
+paused = false;
+startTimer();
+notificationElement.classList.remove('hover-paused');
+};
 
-startProgress();
+// Eventos de hover para pausar y reanudar
+notificationElement.addEventListener('mouseenter', pauseTimer);
+notificationElement.addEventListener('mouseleave', resumeTimer);
 
+// Bot¨®n cerrar
+const closeBtn = notificationElement.querySelector('.notification-close');
+closeBtn.addEventListener('click', () => {
+if (rafId) cancelAnimationFrame(rafId);
+this.removeNotification(notificationElement);
+});
+
+// Iniciar temporizador
+startTimer();
+
+// Guardar referencias para limpiar si es necesario
 this.notificationTimeouts.set(notificationElement, {
-timeout: progressTimeout,
-pause: pauseProgress,
-resume: resumeProgress
+rafId,
+pause: pauseTimer,
+resume: resumeTimer
 });
 
-notificationElement.querySelector('.notification-close').addEventListener('click', () => {
-const timeoutData = this.notificationTimeouts.get(notificationElement);
-if (timeoutData && timeoutData.timeout) {
-clearTimeout(timeoutData.timeout);
-}
-this.notificationTimeouts.delete(notificationElement);
-this.removeNotification(notificationElement);
-});
-
+// Sonido para success/error
 if (notification.type === 'success' || notification.type === 'error') {
 this.playNotificationSound();
 }
 }
 
 removeNotification(notificationElement) {
-if (!notificationElement.parentNode) return;
+if (!notificationElement || !notificationElement.parentNode) return;
 
 const timeoutData = this.notificationTimeouts.get(notificationElement);
-if (timeoutData && timeoutData.timeout) {
-clearTimeout(timeoutData.timeout);
-}
+if (timeoutData) {
+if (timeoutData.rafId) cancelAnimationFrame(timeoutData.rafId);
 this.notificationTimeouts.delete(notificationElement);
+}
 
+// remover listeners de hover si se guardaron
+try {
 notificationElement.removeEventListener('mouseenter', timeoutData?.pause);
 notificationElement.removeEventListener('mouseleave', timeoutData?.resume);
+} catch (e) {
+// noop
+}
 
 notificationElement.classList.remove('show');
 setTimeout(() => {
@@ -886,6 +895,7 @@ if (notificationElement.parentNode) {
 notificationElement.parentNode.removeChild(notificationElement);
 }
 this.isShowingNotification = false;
+// procesar siguiente en la cola
 this.processNotificationQueue();
 }, 300);
 }
@@ -901,47 +911,54 @@ return icons[type] || 'info-circle';
 }
 
 playNotificationSound() {
-if (this.notificationSound) {
+if (!this.notificationSound) return;
 this.notificationSound.currentTime = 0;
 this.notificationSound.play().catch(e => {
-console.log('No se pudo reproducir el sonido de notificaciÃ³n');
+// silenciar errores por pol¨ªticas del navegador
+console.log('No se pudo reproducir el sonido de notificaci¨®n');
 });
 }
-}
 
+/* ========== Confirmaci¨®n modal ligero ========== */
 async showConfirmation(title, message) {
 return new Promise((resolve) => {
 const modal = document.createElement('div');
 modal.className = 'modal confirmation-modal';
 modal.innerHTML = `
 <div class="modal-content">
-<h3>${title}</h3>
-<div class="modal-message">${message}</div>
-<div class="modal-actions">
+<div class="modal-header"><h3>${this.escapeHtml(title)}</h3><button class="close">&times;</button></div>
+<div class="modal-body">
+<div class="modal-message">${this.escapeHtml(message)}</div>
+<div class="modal-actions" style="margin-top:1rem;">
 <button class="btn-secondary" id="confirmCancel">Cancelar</button>
 <button class="btn-primary" id="confirmOk">Aceptar</button>
+</div>
 </div>
 </div>
 `;
 
 document.body.appendChild(modal);
+// asegurar close
 modal.style.display = 'block';
 
 const cleanup = () => {
 modal.style.display = 'none';
 setTimeout(() => {
-if (modal.parentNode) {
-modal.parentNode.removeChild(modal);
-}
+if (modal.parentNode) modal.parentNode.removeChild(modal);
 }, 300);
 };
 
-document.getElementById('confirmOk').addEventListener('click', () => {
+modal.querySelector('.close').addEventListener('click', () => {
+cleanup();
+resolve(false);
+});
+
+modal.querySelector('#confirmOk').addEventListener('click', () => {
 cleanup();
 resolve(true);
 });
 
-document.getElementById('confirmCancel').addEventListener('click', () => {
+modal.querySelector('#confirmCancel').addEventListener('click', () => {
 cleanup();
 resolve(false);
 });
@@ -955,13 +972,14 @@ resolve(false);
 });
 }
 
+/* ========== SSE (realtime) ========== */
 setupSSE() {
 try {
 this.eventSource = new EventSource('/api/realtime/events');
 
 this.eventSource.onopen = () => {
 console.log('Conectado al servidor SSE');
-this.showNotification('ConexiÃ³n establecida', 'Conectado al servidor en tiempo real', 'success', 3000);
+this.showNotification('Conexi¨®n establecida', 'Conectado al servidor en tiempo real', 'success', 3000);
 };
 
 this.eventSource.onmessage = (event) => {
@@ -974,19 +992,14 @@ console.error('Error procesando evento SSE:', error);
 };
 
 this.eventSource.onerror = (event) => {
-console.error('Error en conexiÃ³n SSE - intentando reconectar');
+console.error('Error en conexi¨®n SSE - intentando reconectar');
 if (this.eventSource.readyState === EventSource.CLOSED) {
-setTimeout(() => {
-this.setupSSE();
-}, 5000);
+setTimeout(() => this.setupSSE(), 5000);
 }
 };
-
 } catch (error) {
 console.error('Error al configurar SSE:', error);
-setTimeout(() => {
-this.setupSSE();
-}, 5000);
+setTimeout(() => this.setupSSE(), 5000);
 }
 }
 
@@ -1033,6 +1046,7 @@ this.loadNotificationStats();
 this.loadNotifications();
 }
 
+/* ========== Notificaciones Push del navegador ========== */
 showPushNotification(notification) {
 if (!("Notification" in window)) {
 console.log("Este navegador no soporta notificaciones push");
@@ -1079,7 +1093,7 @@ if (Notification.permission === "default") {
 try {
 const permission = await Notification.requestPermission();
 if (permission === "granted") {
-this.showNotification('Notificaciones activadas', 'Ahora recibirÃ¡s notificaciones push', 'success', 5000);
+this.showNotification('Notificaciones activadas', 'Ahora recibir¨¢s notificaciones push', 'success', 5000);
 }
 } catch (error) {
 console.error('Error solicitando permiso de notificaciones:', error);
@@ -1087,6 +1101,7 @@ console.error('Error solicitando permiso de notificaciones:', error);
 }
 }
 
+/* ========== Escape HTML simple ========== */
 escapeHtml(unsafe) {
 if (typeof unsafe !== 'string') return unsafe;
 return unsafe
@@ -1097,13 +1112,14 @@ return unsafe
 .replace(/'/g, "&#039;");
 }
 
+/* ========== Preview de imagen a base64 ========== */
 previewImageAsBase64(input, previewId, dataFieldId) {
 const file = input.files[0];
 const preview = document.getElementById(previewId);
 
 if (file) {
 if (!file.type.startsWith('image/')) {
-this.showNotification('Error', 'Por favor selecciona un archivo de imagen vÃ¡lido', 'error');
+this.showNotification('Error', 'Por favor selecciona un archivo de imagen v¨¢lido', 'error');
 input.value = '';
 return;
 }
@@ -1116,7 +1132,7 @@ return;
 
 const reader = new FileReader();
 reader.onload = (e) => {
-preview.innerHTML = `<img src="${e.target.result}" alt="Preview">`;
+if (preview) preview.innerHTML = `<img src="${e.target.result}" alt="Preview">`;
 
 let dataField = document.getElementById(dataFieldId);
 if (!dataField) {
@@ -1131,13 +1147,14 @@ input.removeAttribute('required');
 };
 reader.readAsDataURL(file);
 } else {
-preview.innerHTML = '';
+if (preview) preview.innerHTML = '';
 const dataField = document.getElementById(dataFieldId);
 if (dataField) dataField.value = '';
 input.setAttribute('required', 'true');
 }
 }
 
+/* ========== Modales CRUD (asegurar que footer siempre accesible) ========== */
 openProductModal(product = null) {
 this.currentProduct = product;
 const modal = document.getElementById('productModal');
@@ -1226,18 +1243,20 @@ const title = document.getElementById('notificationModalTitle');
 
 this.prepareModal(modal, () => {
 document.querySelectorAll('.send-option-btn').forEach(btn => btn.classList.remove('active'));
-document.querySelector('.send-option-btn[data-type="immediately"]').classList.add('active');
-document.getElementById('scheduleFields').style.display = 'none';
+const defBtn = document.querySelector('.send-option-btn[data-type="immediately"]');
+if (defBtn) defBtn.classList.add('active');
+const scheduleFields = document.getElementById('scheduleFields');
+if (scheduleFields) scheduleFields.style.display = 'none';
 
 const now = new Date();
 const today = now.toISOString().split('T')[0];
-const currentTime12h = this.formatTimeTo12h(now.toTimeString().slice(0,5));
+const currentTime12h = this.formatTimeTo12h(now.toTimeString().slice(0, 5));
 
 document.getElementById('notificationSendDate').value = today;
 document.getElementById('notificationSendTime').value = currentTime12h;
 
 if (notification) {
-title.innerHTML = '<i class="fas fa-edit"></i> Editar NotificaciÃ³n';
+title.innerHTML = '<i class="fas fa-edit"></i> Editar Notificaci¨®n';
 document.getElementById('notificationId').value = notification.id;
 document.getElementById('notificationTitle').value = notification.title;
 document.getElementById('notificationMessage').value = notification.message;
@@ -1245,7 +1264,7 @@ document.getElementById('notificationType').value = notification.type;
 
 const sendDate = new Date(notification.send_at);
 const formattedDate = sendDate.toISOString().split('T')[0];
-const formattedTime = this.formatTimeTo12h(sendDate.toTimeString().slice(0,5));
+const formattedTime = this.formatTimeTo12h(sendDate.toTimeString().slice(0, 5));
 
 document.getElementById('notificationSendDate').value = formattedDate;
 document.getElementById('notificationSendTime').value = formattedTime;
@@ -1253,15 +1272,15 @@ document.getElementById('notificationSendTime').value = formattedTime;
 if (sendDate <= new Date()) {
 document.querySelector('.send-option-btn[data-type="immediately"]').classList.add('active');
 document.querySelector('.send-option-btn[data-type="schedule"]').classList.remove('active');
-document.getElementById('scheduleFields').style.display = 'none';
+if (scheduleFields) scheduleFields.style.display = 'none';
 } else {
 document.querySelector('.send-option-btn[data-type="schedule"]').classList.add('active');
 document.querySelector('.send-option-btn[data-type="immediately"]').classList.remove('active');
-document.getElementById('scheduleFields').style.display = 'block';
+if (scheduleFields) scheduleFields.style.display = 'block';
 }
 document.getElementById('sendNotificationBtn').style.display = notification.is_sent ? 'none' : 'block';
 } else {
-title.innerHTML = '<i class="fas fa-plus"></i> Nueva NotificaciÃ³n';
+title.innerHTML = '<i class="fas fa-plus"></i> Nueva Notificaci¨®n';
 document.getElementById('notificationForm').reset();
 document.getElementById('notificationType').value = 'info';
 document.getElementById('sendNotificationBtn').style.display = 'block';
@@ -1271,26 +1290,30 @@ document.getElementById('notificationId').value = '';
 }
 
 prepareModal(modal, setupCallback) {
+// cerrar otros modales
 this.closeAllModals();
+// ejecutar callback para rellenar contenido
 setupCallback();
+
+// mostrar modal
 modal.style.display = 'block';
+
+// asegurar que el contenido tenga scroll interno y footer visible
 requestAnimationFrame(() => {
 const modalContent = modal.querySelector('.modal-content');
 if (modalContent) {
-modalContent.style.transform = 'translate(-50%, -50%) scale(1)';
+modalContent.style.transform = 'translate(-50%,-50%) scale(1)';
 }
 const modalBody = modal.querySelector('.modal-body');
 if (modalBody) {
 modalBody.style.overflowY = 'auto';
-modalBody.style.maxHeight = 'calc(85vh - 140px)';
+modalBody.style.maxHeight = 'calc(95vh - 200px)';
 }
 });
 }
 
 closeAllModals() {
-document.querySelectorAll('.modal').forEach(modal => {
-modal.style.display = 'none';
-});
+document.querySelectorAll('.modal').forEach(modal => modal.style.display = 'none');
 }
 
 async saveProduct() {
@@ -1322,13 +1345,10 @@ return;
 const productId = document.getElementById('productId').value;
 let result;
 
+// bot¨®n submit
 let submitButton = document.querySelector('#productForm button[type="submit"]');
-if (!submitButton) {
-submitButton = document.querySelector('#productForm .btn-primary');
-}
-if (!submitButton) {
-submitButton = document.querySelector('.modal-footer .btn-primary');
-}
+if (!submitButton) submitButton = document.querySelector('#productForm .btn-primary');
+if (!submitButton) submitButton = document.querySelector('.modal-footer .btn-primary');
 
 let originalText = '';
 if (submitButton) {
@@ -1355,7 +1375,7 @@ body: JSON.stringify(formData)
 
 if (result) {
 document.getElementById('productModal').style.display = 'none';
-this.showNotification('Ã‰xito', `Producto ${productId ? 'actualizado' : 'creado'} correctamente`, 'success');
+this.showNotification('¨¦xito', `Producto ${productId ? 'actualizado' : 'creado'} correctamente`, 'success');
 await this.loadProducts();
 }
 } catch (error) {
@@ -1389,10 +1409,13 @@ const bannerId = document.getElementById('bannerId').value;
 let result;
 
 const submitButton = document.querySelector('#bannerForm button[type="submit"]');
-const originalText = submitButton.innerHTML;
+const originalText = submitButton ? submitButton.innerHTML : '';
+
+if (submitButton) {
 submitButton.innerHTML = '<div class="loading-spinner"></div> Guardando...';
 submitButton.classList.add('btn-loading');
 submitButton.disabled = true;
+}
 
 try {
 if (bannerId) {
@@ -1411,15 +1434,17 @@ body: JSON.stringify(formData)
 
 if (result) {
 document.getElementById('bannerModal').style.display = 'none';
-this.showNotification('Ã‰xito', `Banner ${bannerId ? 'actualizado' : 'creado'} correctamente`, 'success');
+this.showNotification('¨¦xito', `Banner ${bannerId ? 'actualizado' : 'creado'} correctamente`, 'success');
 await this.loadBanners();
 }
 } catch (error) {
 this.showNotification('Error', error.message || 'Error al guardar el banner', 'error');
 } finally {
+if (submitButton) {
 submitButton.innerHTML = originalText;
 submitButton.classList.remove('btn-loading');
 submitButton.disabled = false;
+}
 }
 }
 
@@ -1434,11 +1459,10 @@ const sendDate = document.getElementById('notificationSendDate').value;
 const sendTime = document.getElementById('notificationSendTime').value;
 
 if (!sendDate || !sendTime) {
-this.showNotification('Error', 'Debes especificar fecha y hora para el envÃ­o programado', 'error');
+this.showNotification('Error', 'Debes especificar fecha y hora para el env¨ªo programado', 'error');
 return false;
 }
 
-// Convertir hora 12H a 24H
 const time24h = this.formatTimeTo24h(sendTime);
 const dateTimeString = `${sendDate}T${time24h}:00`;
 sendAt = new Date(dateTimeString).toISOString();
@@ -1453,7 +1477,7 @@ send_at: sendAt
 };
 
 if (!formData.title || !formData.message) {
-this.showNotification('Error', 'TÃ­tulo y mensaje son campos requeridos', 'error');
+this.showNotification('Error', 'T¨ªtulo y mensaje son campos requeridos', 'error');
 return false;
 }
 
@@ -1489,14 +1513,14 @@ if (result) {
 if (!notificationId && result.id) {
 document.getElementById('notificationId').value = result.id;
 }
-this.showNotification('Ã‰xito', `NotificaciÃ³n ${notificationId ? 'actualizada' : 'creada'} correctamente`, 'success');
+this.showNotification('¨¦xito', `Notificaci¨®n ${notificationId ? 'actualizada' : 'creada'} correctamente`, 'success');
 await this.loadNotifications();
 await this.loadNotificationStats();
 return true;
 }
 return false;
 } catch (error) {
-this.showNotification('Error', error.message || 'Error al guardar la notificaciÃ³n', 'error');
+this.showNotification('Error', error.message || 'Error al guardar la notificaci¨®n', 'error');
 return false;
 } finally {
 if (submitButton) {
@@ -1509,52 +1533,46 @@ submitButton.disabled = false;
 
 async sendNotification(id) {
 const confirmed = await this.showConfirmation(
-'Enviar notificaciÃ³n',
-'Â¿EstÃ¡s seguro de que quieres enviar esta notificaciÃ³n ahora?'
+'Enviar notificaci¨®n',
+'?Est¨¢s seguro de que quieres enviar esta notificaci¨®n ahora?'
 );
 
 if (!confirmed) return;
 
 try {
-const result = await this.fetchData(`notifications/${id}/send`, {
-method: 'POST'
-});
-
+const result = await this.fetchData(`notifications/${id}/send`, { method: 'POST' });
 if (result && result.success) {
 await this.loadNotifications();
 await this.loadNotificationStats();
-this.showNotification('Ã‰xito', 'NotificaciÃ³n enviada correctamente', 'success');
+this.showNotification('¨¦xito', 'Notificaci¨®n enviada correctamente', 'success');
 
 if (result.notification) {
 this.showPushNotification(result.notification);
 }
 }
 } catch (error) {
-this.showNotification('Error', error.message || 'Error al enviar la notificaciÃ³n', 'error');
+this.showNotification('Error', error.message || 'Error al enviar la notificaci¨®n', 'error');
 }
 }
 
 async sendCurrentNotification() {
 const saved = await this.saveNotification();
-if (!saved) {
-return;
-}
+if (!saved) return;
 const notificationId = document.getElementById('notificationId').value;
 if (notificationId) {
 await this.sendNotification(notificationId);
 document.getElementById('notificationModal').style.display = 'none';
 } else {
-this.showNotification('Error', 'No se pudo obtener el ID de la notificaciÃ³n', 'error');
+this.showNotification('Error', 'No se pudo obtener el ID de la notificaci¨®n', 'error');
 }
 }
 
+/* ========== Edit / Delete helpers ========== */
 async editProduct(id) {
 try {
 const products = await this.fetchData('products');
 const product = products.find(p => p.id == id);
-if (product) {
-this.openProductModal(product);
-}
+if (product) this.openProductModal(product);
 } catch (error) {
 console.error('Error editing product:', error);
 this.showNotification('Error', 'Error al cargar el producto', 'error');
@@ -1565,9 +1583,7 @@ async editBanner(id) {
 try {
 const banners = await this.fetchData('banners');
 const banner = banners.find(b => b.id == id);
-if (banner) {
-this.openBannerModal(banner);
-}
+if (banner) this.openBannerModal(banner);
 } catch (error) {
 console.error('Error editing banner:', error);
 this.showNotification('Error', 'Error al cargar el banner', 'error');
@@ -1578,30 +1594,24 @@ async editNotification(id) {
 try {
 const notifications = await this.fetchData('notifications');
 const notification = notifications.find(n => n.id == id);
-if (notification) {
-this.openNotificationModal(notification);
-}
+if (notification) this.openNotificationModal(notification);
 } catch (error) {
 console.error('Error editing notification:', error);
-this.showNotification('Error', 'Error al cargar la notificaciÃ³n', 'error');
+this.showNotification('Error', 'Error al cargar la notificaci¨®n', 'error');
 }
 }
 
 async deleteProduct(id) {
 const confirmed = await this.showConfirmation(
 'Eliminar producto',
-'Â¿EstÃ¡s seguro de que quieres eliminar este producto? Esta acciÃ³n no se puede deshacer.'
+'?Est¨¢s seguro de que quieres eliminar este producto? Esta acci¨®n no se puede deshacer.'
 );
-
 if (!confirmed) return;
 
 try {
-const result = await this.fetchData(`products/${id}`, {
-method: 'DELETE'
-});
-
+const result = await this.fetchData(`products/${id}`, { method: 'DELETE' });
 if (result) {
-this.showNotification('Ã‰xito', 'Producto eliminado correctamente', 'success');
+this.showNotification('¨¦xito', 'Producto eliminado correctamente', 'success');
 await this.loadProducts();
 }
 } catch (error) {
@@ -1612,18 +1622,14 @@ this.showNotification('Error', error.message || 'Error al eliminar el producto',
 async deleteBanner(id) {
 const confirmed = await this.showConfirmation(
 'Eliminar banner',
-'Â¿EstÃ¡s seguro de que quieres eliminar este banner? Esta acciÃ³n no se puede deshacer.'
+'?Est¨¢s seguro de que quieres eliminar este banner? Esta acci¨®n no se puede deshacer.'
 );
-
 if (!confirmed) return;
 
 try {
-const result = await this.fetchData(`banners/${id}`, {
-method: 'DELETE'
-});
-
+const result = await this.fetchData(`banners/${id}`, { method: 'DELETE' });
 if (result) {
-this.showNotification('Ã‰xito', 'Banner eliminado correctamente', 'success');
+this.showNotification('¨¦xito', 'Banner eliminado correctamente', 'success');
 await this.loadBanners();
 }
 } catch (error) {
@@ -1633,42 +1639,38 @@ this.showNotification('Error', error.message || 'Error al eliminar el banner', '
 
 async deleteNotification(id) {
 const confirmed = await this.showConfirmation(
-'Eliminar notificaciÃ³n',
-'Â¿EstÃ¡s seguro de que quieres eliminar esta notificaciÃ³n? Esta acciÃ³n no se puede deshacer.'
+'Eliminar notificaci¨®n',
+'?Est¨¢s seguro de que quieres eliminar esta notificaci¨®n? Esta acci¨®n no se puede deshacer.'
 );
-
 if (!confirmed) return;
 
 try {
-const result = await this.fetchData(`notifications/${id}`, {
-method: 'DELETE'
-});
-
+const result = await this.fetchData(`notifications/${id}`, { method: 'DELETE' });
 if (result) {
-this.showNotification('Ã‰xito', 'NotificaciÃ³n eliminada correctamente', 'success');
+this.showNotification('¨¦xito', 'Notificaci¨®n eliminada correctamente', 'success');
 await this.loadNotifications();
 await this.loadNotificationStats();
 }
 } catch (error) {
-this.showNotification('Error', error.message || 'Error al eliminar la notificaciÃ³n', 'error');
+this.showNotification('Error', error.message || 'Error al eliminar la notificaci¨®n', 'error');
 }
 }
 
+/* ========== Actualizar insignias y estad¨ªsticas ========== */
 async updateinsignias() {
 const confirmed = await this.showConfirmation(
 'Actualizar insignias',
-'Â¿EstÃ¡s seguro de que quieres actualizar automÃ¡ticamente todas las etiquetas de productos?\n\n' +
-'Esta acciÃ³n aplicarÃ¡ las reglas:\n' +
-'â€¢ 50+ likes â†’ Destacado\n' +
-'â€¢ 100+ likes â†’ MÃ¡s Vendido\n' +
-'â€¢ 15 dÃ­as â†’ Quitar "Nuevo"\n\n' +
-'Â¿Continuar?'
+'?Est¨¢s seguro de que quieres actualizar autom¨¢ticamente todas las etiquetas de productos?\n\n' +
+'Esta acci¨®n aplicar¨¢ las reglas:\n' +
+'? 50+ likes ¡ú Destacado\n' +
+'? 100+ likes ¡ú M¨¢s Vendido\n' +
+'? 15 d¨ªas ¡ú Quitar "Nuevo"\n\n' +
+'?Continuar?'
 );
-
 if (!confirmed) return;
 
 const updateButton = document.querySelector('#updateinsigniasBtn');
-const originalText = updateButton.innerHTML;
+const originalText = updateButton ? updateButton.innerHTML : '';
 
 if (updateButton) {
 updateButton.innerHTML = '<div class="loading-spinner"></div> Actualizando...';
@@ -1677,20 +1679,13 @@ updateButton.disabled = true;
 }
 
 try {
-const result = await this.fetchData('products/update-insignias', {
-method: 'POST'
-});
-
+const result = await this.fetchData('products/update-insignias', { method: 'POST' });
 if (result && result.success) {
 this.showNotification(
 'Insignias Actualizados',
-`Se actualizaron ${result.updatedProducts} productos.\n` +
-`Destacados: ${result.stats.featured}\n` +
-`MÃ¡s Vendidos: ${result.stats.best_seller}\n` +
-`Nuevos: ${result.stats.new}`,
+`Se actualizaron ${result.updatedProducts} productos.\nDestacados: ${result.stats.featured}\nM¨¢s Vendidos: ${result.stats.best_seller}\nNuevos: ${result.stats.new}`,
 'success'
 );
-
 await this.loadProducts();
 await this.showinsigniasStats();
 }
@@ -1738,12 +1733,12 @@ statsContent.innerHTML = `
 <div class="stat-card">
 <i class="fas fa-fire" style="color: #3498db;"></i>
 <span class="stat-value">${stats.current.best_seller}</span>
-<span class="stat-label">MÃ¡s Vendidos</span>
+<span class="stat-label">M¨¢s Vendidos</span>
 </div>
 </div>
 
 <div class="stats-section">
-<h4><i class="fas fa-bullseye"></i> PuntuaciÃ³n de Productos</h4>
+<h4><i class="fas fa-bullseye"></i> Puntuaci¨®n de Productos</h4>
 <div class="stats-grid">
 <div class="stat-card">
 <i class="fas fa-trophy" style="color: #f39c12;"></i>
@@ -1753,7 +1748,7 @@ statsContent.innerHTML = `
 <div class="stat-card">
 <i class="fas fa-crown" style="color: #9b59b6;"></i>
 <span class="stat-value">${stats.eligible.best_seller}</span>
-<span class="stat-label">MÃ¡s Vendido (100+ likes)</span>
+<span class="stat-label">M¨¢s Vendido (100+ likes)</span>
 </div>
 </div>
 </div>
@@ -1777,21 +1772,21 @@ statsContent.innerHTML = `
 ${stats.expired.new > 0 ? `
 <div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 8px; padding: 1rem; margin-top: 1rem;">
 <i class="fas fa-exclamation-triangle" style="color: #f39c12;"></i>
-<strong>AcciÃ³n Recomendada:</strong> ${stats.expired.new} productos han excedido los 15 dÃ­as y deberÃ­an perder la etiqueta "Nuevo".
-</div>
-` : ''}
+<strong>Acci¨®n Recomendada:</strong> ${stats.expired.new} productos han excedido los 15 d¨ªas y deber¨ªan perder la etiqueta "Nuevo".
+</div>` : ''}
 `;
 } else {
-statsContent.innerHTML = '<p class="no-data">Error al cargar las estadÃ­sticas</p>';
+statsContent.innerHTML = '<p class="no-data">Error al cargar las estad¨ªsticas</p>';
 }
 } catch (error) {
-console.error('Error al obtener estadÃ­sticas:', error);
+console.error('Error al obtener estad¨ªsticas:', error);
 const statsContent = document.getElementById('statsContent');
-statsContent.innerHTML = '<p class="no-data">Error al cargar las estadÃ­sticas</p>';
+if (statsContent) statsContent.innerHTML = '<p class="no-data">Error al cargar las estad¨ªsticas</p>';
 }
 }
 }
 
+// Inicializar al cargar DOM
 document.addEventListener('DOMContentLoaded', () => {
 new AdminDashboard();
 });
