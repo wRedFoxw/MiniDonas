@@ -1,26 +1,23 @@
 import express from 'express';
 import pool from '../config/database.js';
+import { sendToAllClients } from './realtime.js';
 
 const router = express.Router();
 
-// Función para actualizar automáticamente las etiquetas de productos
-async function updateProductinsignias(productId = null) {
+async function updateProductInsignias(productId = null) {
 let client;
 try {
 client = await pool.connect();
-
-// Actualizar productos destacados y más vendidos basado en likes
 await client.query(`
 UPDATE products 
 SET 
 is_featured = (likes >= 50 AND likes < 100),
 is_best_seller = (likes >= 100),
-is_new = (is_new AND created_at >= NOW() - INTERVAL '15 days')
+is_new = (is_new AND created_at >= NOW() - INTERVAL '15 days'),
+updated_at = NOW()
 WHERE is_active = true
 ${productId ? 'AND id = $1' : ''}
 `, productId ? [productId] : []);
-
-console.log(`insignias actualizados ${productId ? `para producto ${productId}` : 'para todos los productos'}`);
 } catch (error) {
 console.error('Error actualizando insignias:', error);
 } finally {
@@ -28,17 +25,14 @@ if (client) client.release();
 }
 }
 
-// Obtener estado del negocio
 router.get('/business-status', async (req, res) => {
 let client;
 try {
 client = await pool.connect();
 
-// Obtener estado forzado
 const forcedStateResult = await client.query('SELECT * FROM business_forced_state WHERE id = 1');
 const forcedState = forcedStateResult.rows[0];
 
-// Si hay estado forzado activo
 if (forcedState && forcedState.is_forced) {
 const now = new Date();
 const forcedUntil = new Date(forcedState.forced_until);
@@ -47,26 +41,25 @@ return res.json({
 is_open: forcedState.forced_state,
 is_forced: true,
 forced_until: forcedState.forced_until,
-message: forcedState.forced_state ? 
-'Estamos abiertos (horario forzado)' : 
-'Estamos cerrados (horario forzado)'
+message: forcedState.forced_state ? 'Abierto (horario forzado)' : 'Cerrado (horario forzado)'
 });
 }
 }
 
-// Obtener horarios regulares
 const hoursResult = await client.query('SELECT * FROM business_hours ORDER BY day_of_week');
 const businessHours = hoursResult.rows;
 
 const now = new Date();
-const currentDay = now.getDay(); // 0: Domingo, 1: Lunes, ..., 6: Sábado
-const currentTime = now.toTimeString().slice(0, 8); // HH:MM:SS
+const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+const cubaOffset = -5 * 60 * 60 * 1000;
+const cubaTime = new Date(utc + cubaOffset);
 
-// Buscar horario del día actual
+const currentDay = cubaTime.getDay();
+const currentTime = cubaTime.toTimeString().slice(0, 8);
+
 const todayHours = businessHours.find(h => h.day_of_week === currentDay);
 
 if (!todayHours || todayHours.is_closed) {
-// Buscar próximo día abierto
 let nextOpenDay = null;
 for (let i = 1; i <= 7; i++) {
 const nextDay = (currentDay + i) % 7;
@@ -84,13 +77,10 @@ next_open_day: nextOpenDay ? {
 day_name: nextOpenDay.day_name,
 open_time: nextOpenDay.open_time
 } : null,
-message: nextOpenDay ? 
-`Abrimos el ${nextOpenDay.day_name} a las ${nextOpenDay.open_time}` :
-'Cerrado temporalmente'
+message: nextOpenDay ? `Abrimos el ${nextOpenDay.day_name} a las ${nextOpenDay.open_time}` : 'Cerrado'
 });
 }
 
-// Verificar si estamos dentro del horario de hoy
 if (currentTime >= todayHours.open_time && currentTime <= todayHours.close_time) {
 return res.json({
 is_open: true,
@@ -106,7 +96,6 @@ next_open_time: todayHours.open_time,
 message: `Abrimos a las ${todayHours.open_time}`
 });
 } else {
-// Buscar próximo día abierto
 let nextOpenDay = null;
 for (let i = 1; i <= 7; i++) {
 const nextDay = (currentDay + i) % 7;
@@ -124,9 +113,7 @@ next_open_day: nextOpenDay ? {
 day_name: nextOpenDay.day_name,
 open_time: nextOpenDay.open_time
 } : null,
-message: nextOpenDay ? 
-`Abrimos el ${nextOpenDay.day_name} a las ${nextOpenDay.open_time}` :
-'Cerrado temporalmente'
+message: nextOpenDay ? `Abrimos el ${nextOpenDay.day_name} a las ${nextOpenDay.open_time}` : 'Cerrado'
 });
 }
 
@@ -141,15 +128,12 @@ if (client) client.release();
 router.get('/products', async (req, res) => {
 let client;
 try {
-// Primero actualizamos los insignias
-await updateProductinsignias();
-
+await updateProductInsignias();
 client = await pool.connect();
 const result = await client.query(`
 SELECT * FROM products 
 WHERE is_active = true 
 ORDER BY 
--- Orden de prioridad de insignias
 CASE 
 WHEN is_new = true THEN 1
 WHEN is_offer = true THEN 2
@@ -157,24 +141,14 @@ WHEN is_best_seller = true THEN 3
 WHEN is_featured = true THEN 4
 ELSE 5
 END,
--- Orden secundario por fecha de creación (más recientes primero)
 created_at DESC
 `);
 res.json(result.rows);
 } catch (error) {
 console.error('Error al obtener productos:', error);
-res.status(500).json({ 
-error: 'Error interno del servidor',
-details: process.env.NODE_ENV === 'development' ? error.message : undefined
-});
+res.status(500).json({ error: 'Error interno del servidor' });
 } finally {
-if (client) {
-try {
-client.release();
-} catch (releaseError) {
-console.error('Error liberando cliente:', releaseError);
-}
-}
+if (client) client.release();
 }
 });
 
@@ -203,7 +177,6 @@ try {
 client = await pool.connect();
 await client.query('BEGIN');
 
-// Verificar si ya votó
 const existingVotes = await client.query(
 'SELECT * FROM votes WHERE product_id = $1 AND device_id = $2',
 [productId, deviceId]
@@ -214,13 +187,11 @@ await client.query('ROLLBACK');
 return res.status(400).json({ error: 'Ya has votado por este producto' });
 }
 
-// Registrar voto
 await client.query(
 'INSERT INTO votes (product_id, device_id, type) VALUES ($1, $2, $3)',
 [productId, deviceId, type]
 );
 
-// Actualizar contadores de likes/dislikes
 const columnToUpdate = type === 'like' ? 'likes' : 'dislikes';
 await client.query(
 `UPDATE products SET ${columnToUpdate} = ${columnToUpdate} + 1 WHERE id = $1`,
@@ -228,9 +199,15 @@ await client.query(
 );
 
 await client.query('COMMIT');
+await updateProductInsignias(productId);
 
-// Actualizar insignias del producto después del voto
-await updateProductinsignias(productId);
+const updatedProductResult = await client.query('SELECT * FROM products WHERE id = $1', [productId]);
+const updatedProduct = updatedProductResult.rows[0];
+
+sendToAllClients('products_updated', { 
+action: 'updated', 
+product: updatedProduct 
+});
 
 res.json({ success: true, message: `Voto registrado (${type})` });
 } catch (error) {
@@ -242,42 +219,65 @@ if (client) client.release();
 }
 });
 
-router.post('/update-insignias', async (req, res) => {
-try {
-await updateProductinsignias();
-res.json({ success: true, message: 'Insignias actualizados' });
-} catch (error) {
-console.error('Error actualizando insignias:', error);
-res.status(500).json({ error: 'Error interno del servidor' });
-}
-});
-
 router.post('/register-device', async (req, res) => {
-const { device_id, user_agent } = req.body;
+const { device_id, user_agent, persistent_id } = req.body;
 let client;
 try {
 client = await pool.connect();
 
+let finalDeviceId = device_id;
+if (persistent_id) {
+finalDeviceId = persistent_id;
+}
+
 const existingDevice = await client.query(
 'SELECT * FROM devices WHERE device_id = $1',
-[device_id]
+[finalDeviceId]
 );
 
 if (existingDevice.rows.length > 0) {
 await client.query(
-'UPDATE devices SET last_seen = NOW() WHERE device_id = $1',
-[device_id]
+'UPDATE devices SET last_seen = NOW(), user_agent = $1 WHERE device_id = $2',
+[user_agent || '', finalDeviceId]
 );
 } else {
 await client.query(
 'INSERT INTO devices (device_id, user_agent) VALUES ($1, $2)',
-[device_id, user_agent || '']
+[finalDeviceId, user_agent || '']
 );
 }
 
-res.json({ success: true, message: 'Dispositivo registrado' });
+res.json({ success: true, device_id: finalDeviceId });
 } catch (error) {
 console.error('Error al registrar dispositivo:', error);
+res.status(500).json({ error: 'Error interno del servidor' });
+} finally {
+if (client) client.release();
+}
+});
+
+router.get('/device-votes', async (req, res) => {
+const { device_id } = req.query;
+let client;
+try {
+if (!device_id) {
+return res.status(400).json({ error: 'device_id es requerido' });
+}
+
+client = await pool.connect();
+const result = await client.query(
+'SELECT product_id, type FROM votes WHERE device_id = $1',
+[device_id]
+);
+
+const votes = {};
+result.rows.forEach(vote => {
+votes[vote.product_id] = vote.type;
+});
+
+res.json({ success: true, votes });
+} catch (error) {
+console.error('Error al obtener votos:', error);
 res.status(500).json({ error: 'Error interno del servidor' });
 } finally {
 if (client) client.release();
@@ -293,7 +293,6 @@ return res.status(400).json({ error: 'device_id es requerido' });
 }
 
 client = await pool.connect();
-
 const result = await client.query(
 `SELECT n.*, 
 CASE WHEN nr.device_id IS NULL THEN false ELSE true END as is_read
@@ -324,7 +323,6 @@ return res.status(400).json({ error: 'device_id es requerido' });
 }
 
 client = await pool.connect();
-
 const existingRead = await client.query(
 'SELECT * FROM notification_reads WHERE notification_id = $1 AND device_id = $2',
 [id, device_id]
@@ -337,7 +335,7 @@ await client.query(
 );
 }
 
-res.json({ success: true, message: 'Notificación marcada como leída' });
+res.json({ success: true });
 } catch (error) {
 console.error('Error al marcar notificación como leída:', error);
 res.status(500).json({ error: 'Error interno del servidor' });
@@ -355,7 +353,6 @@ return res.status(400).json({ error: 'device_id es requerido' });
 }
 
 client = await pool.connect();
-
 const result = await client.query(
 `SELECT COUNT(*) 
 FROM notifications n
