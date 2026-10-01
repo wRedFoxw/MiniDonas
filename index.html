@@ -130,7 +130,7 @@
 <img class="menu-hero" src="minidonas-puntuacion.png" alt="" onerror="this.classList.add('hidden')">
 <h2 style="color:#ffd43b">¡Se acabó el tiempo!</h2>
 <div class="stat-box" id="failInfo"></div>
-<button id="btnRetry" class="primary">🔄 Reintentar nivel</button>
+<button id="btnRetry" class="primary">🔄 Reiniciar juego</button>
 <button id="btnPay" class="pay-continue">💰 Continuar</button>
 <button id="btnPayAdvance" class="pay-advance">⏭ Pagar avance de nivel</button>
 <button id="btnCoffee" class="coffee">☕ Tomar un café</button>
@@ -339,7 +339,7 @@
 <button class="donate-btn msg-btn" data-msg="like">👍 Me gusta el juego</button>
 <button class="donate-btn msg-btn" data-msg="work">💼 Contactar para trabajos</button>
 <button class="donate-btn msg-btn" data-msg="idea">💡 Quiero aportar una idea</button>
-<button class="donate-btn donate-coins" data-amount="500">🪙 Donar 500 monedas</button>
+<button class="donate-btn donate-coins" id="btnDonateCoins" data-amount="500">🪙 Donar 500 monedas</button>
 </div>
 <div class="donate-hint">Selecciona una opción para enviar un mensaje al desarrollador por <b>Telegram</b>. ¡Gracias por tu apoyo! ❤️</div>
 <button class="donate-btn back" id="donateModalClose" style="margin-top:14px">← Volver</button>
@@ -553,7 +553,8 @@ function toggleMute(){state.muted=!state.muted;Sound.setMuted(state.muted);updat
 function openDonate(){el.donateModal.classList.add('show');}
 function closeDonate(){el.donateModal.classList.remove('show');}
 function sendTgMsg(type){const msgs={support:'💬 ¡Hola! Quiero enviarte un mensaje de apoyo. Me encanta Minidonas, ¡sigue así! 🍩',like:'👍 ¡Hola! Me gusta mucho tu juego Minidonas. ¡Buen trabajo! 🎮',work:'💼 ¡Hola! Me interesa contactarte para un trabajo o colaboración. ¿Podemos hablar?',idea:'💡 ¡Hola! Tengo una idea o sugerencia para Minidonas. ¿Te la puedo compartir?'};const msg=msgs[type]||'¡Hola!';try{window.open('https://t.me/wRedFoxw?text='+encodeURIComponent(msg),'_blank');showToast('📱 Abriendo Telegram...');}catch(e){showToast('No se pudo abrir Telegram');}Sound.donate();triggerFlash('#29A9EB',0.4);}
-function donateCoins(){const amount=500;if(state.coins<amount){showToast('No tienes suficientes monedas (necesitas 500)');return;}state.coins-=amount;state.totalDonated=(state.totalDonated||0)+amount;state.donationCount=(state.donationCount||0)+1;saveGame();updateHUD();Sound.donate();triggerFlash('#f06595',0.7);spawnConfetti(60);showBanner('❤️ ¡Gracias por tu donación!','#f06595');if(!state.donationBonusClaimed&&state.donationCount>=CFG.donationBonusThreshold){state.donationBonusClaimed=true;state.coins+=CFG.donationBonusCoins;state.diamonds+=CFG.donationBonusDiamonds;state.crowns+=CFG.donationBonusCrowns;state.totalCoinsEarned+=CFG.donationBonusCoins;state.totalDiamondsEarned+=CFG.donationBonusDiamonds;state.totalCrownsEarned+=CFG.donationBonusCrowns;setTimeout(()=>{showBanner('🎁 ¡BONIFICACIÓN POR DONACIONES!','#ffd43b');triggerFlash('#ffd43b',0.9);spawnConfetti(80);Sound.trophyReward();Sound.achv();showToast('🎁 ¡Bonificación! +'+CFG.donationBonusCoins+'🪙 +'+CFG.donationBonusDiamonds+'💎 +'+CFG.donationBonusCrowns+'👑');updateHUD();saveGame();},1200);}else if(!state.donationBonusClaimed&&state.donationCount<CFG.donationBonusThreshold){const remaining=CFG.donationBonusThreshold-state.donationCount;setTimeout(()=>{showToast('🎁 Te faltan '+remaining+' donación(es) para la bonificación');},1200);}closeDonate();}
+function updateDonateButtonVisibility(){const btn=document.getElementById('btnDonateCoins');if(!btn)return;if(state.donationBonusClaimed){btn.style.display='none';}else{btn.style.display='';}}
+function donateCoins(){const amount=500;if(state.coins<amount){showToast('No tienes suficientes monedas (necesitas 500)');return;}state.coins-=amount;state.totalDonated=(state.totalDonated||0)+amount;state.donationCount=(state.donationCount||0)+1;saveGame();updateHUD();Sound.donate();triggerFlash('#f06595',0.7);spawnConfetti(60);showBanner('❤️ ¡Gracias por tu donación!','#f06595');if(!state.donationBonusClaimed&&state.donationCount>=CFG.donationBonusThreshold){state.donationBonusClaimed=true;state.coins+=CFG.donationBonusCoins;state.diamonds+=CFG.donationBonusDiamonds;state.crowns+=CFG.donationBonusCrowns;state.totalCoinsEarned+=CFG.donationBonusCoins;state.totalDiamondsEarned+=CFG.donationBonusDiamonds;state.totalCrownsEarned+=CFG.donationBonusCrowns;setTimeout(()=>{showBanner('🎁 ¡BONIFICACIÓN POR DONACIONES!','#ffd43b');triggerFlash('#ffd43b',0.9);spawnConfetti(80);Sound.trophyReward();Sound.achv();showToast('🎁 ¡Bonificación! +'+CFG.donationBonusCoins+'🪙 +'+CFG.donationBonusDiamonds+'💎 +'+CFG.donationBonusCrowns+'👑');updateHUD();saveGame();updateDonateButtonVisibility();},1200);}closeDonate();}
 window.addEventListener('resize',()=>{setAppHeight();checkOrientation();requestAnimationFrame(fitCanvasToScreen);});
 window.addEventListener('orientationchange',()=>setTimeout(()=>{setAppHeight();checkOrientation();requestAnimationFrame(fitCanvasToScreen);},300));
 if(window.visualViewport){window.visualViewport.addEventListener('resize',()=>{setAppHeight();requestAnimationFrame(fitCanvasToScreen);});window.visualViewport.addEventListener('scroll',setAppHeight);}
@@ -576,7 +577,7 @@ document.getElementById('btnMemoryRestart').addEventListener('click',()=>{Sound.
 document.getElementById('btnMemoryQuit').addEventListener('click',()=>{Sound.click();MEMORY.active=false;state.running=false;showMenu('menuStart');});
 document.getElementById('btnCoffeeMain').addEventListener('click',()=>{Sound.click();state.coffeeOrigin='menuStart';startCoffee();showMenu('menuCoffee');});
 document.getElementById('btnNext').addEventListener('click',()=>{Sound.click();nextLevel(false);});
-document.getElementById('btnRetry').addEventListener('click',()=>{Sound.click();startLevel(false);});
+document.getElementById('btnRetry').addEventListener('click',()=>{Sound.click();restartGame();});
 document.getElementById('btnPay').addEventListener('click',()=>{const cost=getContinueCost();if(state.coins>=cost){Sound.buy();state.coins-=cost;saveGame();nextLevel(true);}});
 document.getElementById('btnPayAdvance').addEventListener('click',()=>{const cost=getAdvanceCost();if(state.coins>=cost){Sound.buy();state.coins-=cost;state.level++;if(state.level>state.maxLevel)state.maxLevel=state.level;if(!state.unlockedDiscount&&state.level>=CFG.discountUnlockLevel){state.unlockedDiscount=true;showBanner('🎉 ¡Sonrisa Minidonas desbloqueada!','#e8447c');}saveGame();startLevel(false);}});
 document.getElementById('btnShop').addEventListener('click',()=>{Sound.click();openShop('menuNext');});
@@ -611,6 +612,7 @@ el.pauseBtn.addEventListener('click',()=>{Sound.click();togglePause();});
 el.muteBtn.addEventListener('click',()=>{toggleMute();});
 state.basket=createBasket();
 loadSave();
+updateDonateButtonVisibility();
 Sound.setMuted(state.muted);
 updateMuteBtn();
 updateHUD();
