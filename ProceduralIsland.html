@@ -133,11 +133,16 @@
 <script type="module">
 import{initializeApp}from"./firebase-app.js";
 import{getAuth,signInWithPopup,GoogleAuthProvider,onAuthStateChanged,signOut}from"./firebase-auth.js";
-import{getDatabase,ref,set,get,update,remove,onValue,onDisconnect,serverTimestamp,goOnline,goOffline}from"./firebase-database.js";
+import{getDatabase,ref,set,get,update,remove,onValue,onDisconnect,serverTimestamp}from"./firebase-database.js";
+window.fbModuleLoaded=false;
+window.fbModuleError=null;
+try{
 const firebaseConfig={apiKey:"AIzaSyCA40mc4RCsQp1wlLBJsYn-8A48qevfIGI",authDomain:"minidonas-game.firebaseapp.com",projectId:"minidonas-game",storageBucket:"minidonas-game.firebasestorage.app",messagingSenderId:"363481040826",appId:"1:363481040826:web:bb388d10b2956c2d4bff83",databaseURL:"https://minidonas-game-default-rtdb.firebaseio.com"};
 const app=initializeApp(firebaseConfig);
 const auth=getAuth(app);
 const rtdb=getDatabase(app);
+window.fbAuth=auth;
+window.fbDb=rtdb;
 window.fbReady=false;
 window.fbAuthReady=false;
 window.fbDbConnected=false;
@@ -145,9 +150,8 @@ window.fbCurrentUser=null;
 window.fbError=null;
 window.fbSignIn=async()=>{try{const p=new GoogleAuthProvider();const res=await signInWithPopup(auth,p);return{ok:true,user:res.user};}catch(e){console.error('signIn error',e);return{ok:false,code:e&&e.code||'unknown',message:e&&e.message||''};}};
 window.fbSignOut=async()=>{try{await signOut(auth);return true;}catch(e){console.error(e);return false;}};
-window.fbRetry=async()=>{try{goOffline(rtdb);setTimeout(()=>{try{goOnline(rtdb);}catch(e){}},400);return true;}catch(e){return false;}};
 const connRef=ref(rtdb,'.info/connected');
-onValue(connRef,(snap)=>{window.fbDbConnected=snap.val()===true;window.dispatchEvent(new CustomEvent('fb-conn-changed',{detail:window.fbDbConnected}));},()=>{window.fbDbConnected=false;window.dispatchEvent(new CustomEvent('fb-conn-changed',{detail:false}));});
+onValue(connRef,(snap)=>{window.fbDbConnected=snap.val()===true;window.dispatchEvent(new CustomEvent('fb-conn-changed',{detail:window.fbDbConnected}));},(err)=>{console.error('conn error',err);window.fbDbConnected=false;window.dispatchEvent(new CustomEvent('fb-conn-changed',{detail:false}));});
 onAuthStateChanged(auth,(user)=>{
 const data=user?{uid:user.uid,name:user.displayName||'Jugador',photo:user.photoURL||'',email:user.email||''}:null;
 window.fbCurrentUser=data;
@@ -174,7 +178,13 @@ subscribeStates:(roomId,cb)=>{const r=ref(rtdb,'rooms/'+roomId+'/states');return
 pushState:async(roomId,uid,s)=>{try{await set(ref(rtdb,'rooms/'+roomId+'/states/'+uid),s);return true;}catch(e){return false;}},
 registerDisconnect:(roomId,uid)=>{onDisconnect(ref(rtdb,'rooms/'+roomId+'/states/'+uid)).remove();onDisconnect(ref(rtdb,'rooms/'+roomId+'/players/'+uid)).remove();}
 };
+window.fbModuleLoaded=true;
 window.dispatchEvent(new CustomEvent('fb-ready'));
+}catch(err){
+console.error('Firebase module init failed:',err);
+window.fbModuleError=err&&err.message||String(err);
+window.dispatchEvent(new CustomEvent('fb-module-error',{detail:window.fbModuleError}));
+}
 </script>
 <script>
 (function(){
@@ -191,7 +201,7 @@ function mPersp(fov,asp,n,f){var t=1/Math.tan(fov/2),nf=1/(n-f);return new Float
 function mLook(e,c,u){var zx=e[0]-c[0],zy=e[1]-c[1],zz=e[2]-c[2];var zl=Math.sqrt(zx*zx+zy*zy+zz*zz)||1;zx/=zl;zy/=zl;zz/=zl;var xx=u[1]*zz-u[2]*zy,xy=u[2]*zx-u[0]*zz,xz=u[0]*zy-u[1]*zx;var xl=Math.sqrt(xx*xx+xy*xy+xz*xz)||1;xx/=xl;xy/=xl;xz/=xl;var yx=zy*xz-zz*xy,yy=zz*xx-zx*xz,yz=zx*xy-zy*xx;return new Float32Array([xx,yx,zx,0,xy,yy,zy,0,xz,yz,zz,0,-(xx*e[0]+xy*e[1]+xz*e[2]),-(yx*e[0]+yy*e[1]+yz*e[2]),-(zx*e[0]+zy*e[1]+zz*e[2]),1])}
 function mMul(a,b){var o=new Float32Array(16);for(var i=0;i<4;i++)for(var j=0;j<4;j++){var s=0;for(var k=0;k<4;k++)s+=a[k*4+j]*b[i*4+k];o[i*4+j]=s}return o}
 var IDENT=new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]);
-var SAVE_KEY='voxel_island_v30';
+var SAVE_KEY='voxel_island_v31';
 var DEVICE_KEY='voxel_device_id';
 var SIZE=220,HALF=SIZE/2,WATER_Y=0.32,MAPZ=2,FAR=420;
 var heights=new Int16Array(SIZE*SIZE);
@@ -1474,7 +1484,7 @@ fpsC++;
 if(now-lastFpsT>500){document.getElementById('fpsText').textContent=Math.round(fpsC*1000/(now-lastFpsT))+' FPS';fpsC=0;lastFpsT=now}
 requestAnimationFrame(loop);
 }
-var MP={active:false,roomId:null,inviteCode:null,roomName:'',isHost:false,worldSeed:null,players:{},remoteStates:{},interp:{},remoteChars:{},unsubRoom:null,unsubStates:null,lastSyncT:0,joining:false,prevPlayerIds:{},connBound:false};
+var MP={active:false,roomId:null,inviteCode:null,roomName:'',isHost:false,worldSeed:null,players:{},remoteStates:{},interp:{},remoteChars:{},unsubRoom:null,unsubStates:null,lastSyncT:0,joining:false,prevPlayerIds:{}};
 function mpGenerateRoomId(){var chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';var s='';for(var i=0;i<6;i++)s+=chars[Math.floor(Math.random()*chars.length)];return s;}
 function mpEl(id){return document.getElementById(id);}
 function mpUpdateAuthUI(){
@@ -1500,12 +1510,18 @@ if(btnLogout)btnLogout.style.display='none';
 }
 }
 function mpUpdateConnBadge(){
-var connected=window.fbDbConnected===true;
+var modLoaded=window.fbModuleLoaded===true;
+var connected=modLoaded&&window.fbDbConnected===true;
 var badge=mpEl('mpConnBadge');
 var badgeL=mpEl('mpConnBadgeLobby');
-var cn=connected?'mpStatusBadge':'mpStatusBadge off';
-var ic=connected?'i-wifi':'i-wifi-off';
-var tx=connected?'En línea':'Sin conexión';
+var cn,ic,tx;
+if(!modLoaded){
+cn='mpStatusBadge off';ic='i-error';tx='Firebase no cargó';
+}else if(connected){
+cn='mpStatusBadge';ic='i-wifi';tx='En línea';
+}else{
+cn='mpStatusBadge wait';ic='i-wifi-off';tx='Conectando...';
+}
 if(badge){badge.className=cn;badge.innerHTML='<svg viewBox="0 0 24 24"><use href="#'+ic+'"/></svg>'+tx;}
 if(badgeL){badgeL.className=cn;badgeL.innerHTML='<svg viewBox="0 0 24 24"><use href="#'+ic+'"/></svg>'+tx;}
 }
@@ -1557,6 +1573,7 @@ else leaveBtn.innerHTML='<svg viewBox="0 0 24 24"><use href="#i-exit"/></svg>Sal
 }
 async function mpCreateRoom(){
 if(!window.fbCurrentUser){toast('Inicia sesión con Google primero','warn',3600);mpUpdateAuthUI();return;}
+if(window.fbModuleLoaded!==true){toast('Firebase no cargó. Recarga la página (F5)','error',5000);return;}
 if(!window.fbDbConnected){toast('Sin conexión a la base de datos. Revisa tu red.','error',4000);sfxError();return;}
 if(!window.fbMP){toast('Firebase no está listo. Espera un momento...','warn',3000);return;}
 if(MP.active){toast('Ya estás en una sala','info');return;}
@@ -1582,6 +1599,7 @@ toast('Sala creada correctamente','success');
 }
 async function mpJoinRoom(){
 if(!window.fbCurrentUser){toast('Inicia sesión con Google primero','warn',3600);mpUpdateAuthUI();return;}
+if(window.fbModuleLoaded!==true){toast('Firebase no cargó. Recarga la página (F5)','error',5000);return;}
 if(!window.fbDbConnected){toast('Sin conexión a la base de datos. Revisa tu red.','error',4000);sfxError();return;}
 if(!window.fbMP){toast('Firebase no está listo. Espera un momento...','warn',3000);return;}
 if(MP.joining)return;
@@ -1784,12 +1802,13 @@ if(navigator.share){navigator.share({title:'Procedural Island',text:text,url:url
 else{mpCopyInvite();}
 }
 async function mpLogin(){
-if(!window.fbSignIn){toast('Firebase aún no está listo','warn');return;}
+if(window.fbModuleLoaded!==true){toast('Firebase no cargó. Recarga la página (F5).','error',5000);return;}
+if(!window.fbSignIn){toast('El módulo aún se está inicializando. Espera unos segundos.','warn',3000);return;}
 var btn=mpEl('btnMPLogin');
-if(btn){btn.disabled=true;}
+if(btn)btn.disabled=true;
 toast('Abriendo Google...','info',1500);
 var res=await window.fbSignIn();
-if(btn){btn.disabled=false;}
+if(btn)btn.disabled=false;
 if(res&&res.ok){toast('Sesión iniciada correctamente','success');}
 else{
 var code=(res&&res.code)||'unknown';
@@ -1808,6 +1827,10 @@ if(window.fbSignOut){await window.fbSignOut();toast('Sesión cerrada','info');}
 window.addEventListener('fb-auth-changed',function(ev){mpUpdateAuthUI();});
 window.addEventListener('fb-conn-changed',function(ev){mpUpdateConnBadge();});
 window.addEventListener('fb-ready',function(){mpUpdateAuthUI();mpUpdateConnBadge();});
+window.addEventListener('fb-module-error',function(ev){
+toast('Firebase no pudo cargar: '+(ev.detail||'error desconocido'),'error',6000);
+mpUpdateConnBadge();
+});
 function boot(){
 deviceId=getDeviceId();initAudio();loadCfg();
 for(var _ci=0;_ci<CHARS.length;_ci++)if(CHARS[_ci].id===G.sel){G.char=CHARS[_ci];break;}
@@ -1831,8 +1854,8 @@ nameInp.addEventListener('input',function(){playerName=nameInp.value.slice(0,14)
 syncOptUI();
 mpUpdateAuthUI();
 mpUpdateConnBadge();
-window.addEventListener('online',function(){toast('Conexión de red restablecida','success');});
-window.addEventListener('offline',function(){toast('Sin conexión de red','error');});
+setTimeout(function(){if(window.fbModuleLoaded!==true&&!window.fbModuleError){console.warn('Esperando módulo Firebase...');}},1500);
+setTimeout(function(){if(window.fbModuleLoaded!==true&&!window.fbModuleError){toast('Firebase tardó en cargar. Comprueba que firebase-database.js está en la misma carpeta.','warn',6000);}},4000);
 attachPress(document.getElementById('btnPlay'),function(){sfxClick();playerName=(nameInp.value||'Jugador').trim().slice(0,14)||'Jugador';saveCfg();requestFS();fadeEl.classList.remove('clear');setTimeout(function(){regenWorld();startGame();fadeEl.classList.add('clear')},280)});
 attachPress(document.getElementById('btnMultiplayer'),function(){sfxClick();playerName=(nameInp.value||'Jugador').trim().slice(0,14)||'Jugador';saveCfg();mpOpenPanel();});
 attachPress(document.getElementById('btnCloseMP'),function(){sfxClick();mpClosePanel();});
