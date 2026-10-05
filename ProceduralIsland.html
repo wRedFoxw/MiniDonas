@@ -169,7 +169,7 @@ window.fbMP={
 rtdb:rtdb,
 ref:ref,set:set,get:get,update:update,remove:remove,onValue:onValue,onDisconnect:onDisconnect,serverTimestamp:serverTimestamp,
 createRoom:async(roomId,meta)=>{try{const r=ref(rtdb,'rooms/'+roomId);await set(r,{meta:Object.assign({},meta,{createdAt:serverTimestamp()}),players:{},states:{}});return{ok:true};}catch(e){console.error('createRoom err',e);return{ok:false,err:e.message||'error'};}},
-joinRoom:async(roomId,uid,player)=>{try{const snap=await get(ref(rtdb,'rooms/'+roomId));if(!snap.exists())return{ok:false,err:'not_found'};const room=snap.val();if(!room.meta)return{ok:false,err:'invalid'};if(room.meta.state!=='lobby')return{ok:false,err:'in_progress'};const count=room.players?Object.keys(room.players).length:0;if(count>=(room.meta.maxPlayers||10))return{ok:false,err:'full'};const pRef=ref(rtdb,'rooms/'+roomId+'/players/'+uid);await set(pRef,Object.assign({},player,{joinedAt:serverTimestamp()}));onDisconnect(pRef).remove();return{ok:true,meta:room.meta};}catch(e){console.error('joinRoom err',e);return{ok:false,err:e.message||'error'};}},
+joinRoom:async(roomId,uid,player)=>{try{const snap=await get(ref(rtdb,'rooms/'+roomId));if(!snap.exists())return{ok:false,err:'not_found'};const room=snap.val();if(!room.meta)return{ok:false,err:'invalid'};if(room.meta.state==='ended')return{ok:false,err:'ended'};const count=room.players?Object.keys(room.players).length:0;if(count>=(room.meta.maxPlayers||10))return{ok:false,err:'full'};const pRef=ref(rtdb,'rooms/'+roomId+'/players/'+uid);await set(pRef,Object.assign({},player,{joinedAt:serverTimestamp()}));onDisconnect(pRef).remove();return{ok:true,meta:room.meta,currentState:room.meta.state};}catch(e){console.error('joinRoom err',e);return{ok:false,err:e.message||'error'};}},
 leaveRoom:async(roomId,uid)=>{try{try{onDisconnect(ref(rtdb,'rooms/'+roomId+'/players/'+uid)).cancel();onDisconnect(ref(rtdb,'rooms/'+roomId+'/states/'+uid)).cancel();}catch(e){}await remove(ref(rtdb,'rooms/'+roomId+'/players/'+uid)).catch(()=>{});await remove(ref(rtdb,'rooms/'+roomId+'/states/'+uid)).catch(()=>{});return{ok:true};}catch(e){return{ok:false,err:e.message||'error'};}},
 destroyRoom:async(roomId)=>{try{await remove(ref(rtdb,'rooms/'+roomId));return{ok:true};}catch(e){return{ok:false,err:e.message||'error'};}},
 setRoomState:async(roomId,state)=>{try{await update(ref(rtdb,'rooms/'+roomId+'/meta'),{state:state});return{ok:true};}catch(e){return{ok:false,err:e.message||'error'};}},
@@ -1393,6 +1393,7 @@ menuEl.classList.add('hidden');hudEl.classList.add('visible');controlsEl.classLi
 joyBase.style.display='none';IN.run=false;runBtn.classList.remove('on');
 useBtn.classList.remove('show');viewBtn.classList.remove('show');
 optPanelEl.classList.remove('visible');pauseEl.classList.remove('visible');bigmapEl.classList.remove('visible');
+mpCloseLobby();mpClosePanel();
 optSource=null;sfxStart();
 if(MP.active){showMsg('Multijugador<small>'+(MP.isHost?'Eres el anfitrión':'Jugador conectado')+'</small>',2000);}
 else{showMsg('Explora la isla<small>Usa el joystick para moverte</small>',2600);}
@@ -1623,12 +1624,16 @@ return;
 MP.active=true;MP.roomId=code;MP.inviteCode=code;MP.roomName=(res.meta&&res.meta.name)||'Sala';MP.isHost=false;MP.worldSeed=(res.meta&&res.meta.worldSeed)||0;MP.hostId=(res.meta&&res.meta.hostId)||'';MP.players={};MP.prevPlayerIds={};
 window.fbMP.registerDisconnect(code,uid);
 mpSubscribeRoom();
+if(res.currentState==='playing'){
+mpCloseLobby();mpClosePanel();
+toast('Te has unido a la partida en curso','success');
+}else{
 mpOpenLobby();
 mpSetLobbyInfo(MP.roomName,code);
 mpRenderPlayers();
 sfxJoin();
 toast('Te has unido a la sala','success');
-}
+}}
 function mpSubscribeRoom(){
 if(MP.unsubRoom){try{MP.unsubRoom();}catch(e){}MP.unsubRoom=null;}
 if(MP.unsubStates){try{MP.unsubStates();}catch(e){}MP.unsubStates=null;}
