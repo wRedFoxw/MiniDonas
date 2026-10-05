@@ -123,8 +123,15 @@ import{initializeApp}from"./firebase-app.js";
 import{getAuth,signInWithPopup,GoogleAuthProvider,onAuthStateChanged,signOut}from"./firebase-auth.js";
 import{getFirestore,doc,setDoc,getDoc,collection,query,orderBy,limit,onSnapshot,serverTimestamp,where,getDocs,getCountFromServer,enableNetwork,disableNetwork}from"./firebase-firestore.js";
 import{getDatabase,ref as rtdbRef,set as rtdbSet,get as rtdbGet,update as rtdbUpdate,remove as rtdbRemove,onValue as rtdbOnValue,onDisconnect as rtdbOnDisconnect,serverTimestamp as rtdbServerTimestamp}from"./firebase-database.js";
-const firebaseConfig={apiKey:"AIzaSyCA40mc4RCsQp1wlLBJsYn-8A48qevfIGI",authDomain:"minidonas-game.firebaseapp.com",projectId:"minidonas-game",storageBucket:"minidonas-game.firebasestorage.app",messagingSenderId:"363481040826",appId:"1:363481040826:web:bb388d10b2956c2d4bff83"};
-const app=initializeApp(firebaseConfig);
+const firebaseConfig={
+  apiKey:"AIzaSyCA40mc4RCsQp1wlLBJsYn-8A48qevfIGI",
+  authDomain:"minidonas-game.firebaseapp.com",
+  projectId:"minidonas-game",
+  storageBucket:"minidonas-game.firebasestorage.app",
+  messagingSenderId:"363481040826",
+  appId:"1:363481040826:web:bb388d10b2956c2d4bff83",
+  databaseURL:"https://minidonas-game-default-rtdb.firebaseio.com"
+};const app=initializeApp(firebaseConfig);
 const auth=getAuth(app);
 const db=getFirestore(app);
 const rtdb=getDatabase(app);
